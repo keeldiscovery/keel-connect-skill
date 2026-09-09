@@ -40,6 +40,12 @@ BUNDLED_RUNTIME = REPO_ROOT / "keel_runtime"
 AMBIENT = ("KEEL_HOME", "KEEL_BASE_URL", "KEEL_RUNTIME_PATH", "KEEL_EXECUTOR", "PYTHONPATH",
            "CLAUDECODE", "COPILOT_CLI", "COPILOT_AGENT_SESSION_ID", "AI_AGENT")
 
+# `SIGKILL` does not exist on Windows -- `os.kill(pid, signal.SIGTERM)` there calls
+# `TerminateProcess()` unconditionally, so it is just as final a cleanup as SIGKILL is on POSIX.
+# Mirrors keel-runtime's own `KILL_SIGNAL = getattr(signal, "SIGKILL", signal.SIGTERM)`
+# (`keel_runtime/disconnect.py`).
+TEARDOWN_KILL_SIGNAL = getattr(signal, "SIGKILL", signal.SIGTERM)
+
 sys.path.insert(0, str(SCRIPTS))
 import keel_disconnect  # noqa: E402
 
@@ -81,7 +87,7 @@ class DisconnectHarness(unittest.TestCase):
     def tearDown(self):
         for pid in self._pids_to_kill:
             try:
-                os.kill(pid, signal.SIGKILL)
+                os.kill(pid, TEARDOWN_KILL_SIGNAL)
             except (ProcessLookupError, PermissionError):
                 pass
         self._tmp.cleanup()
@@ -90,6 +96,23 @@ class DisconnectHarness(unittest.TestCase):
         self._pids_to_kill.append(pid)
 
     # ------------------------------------------------------------------------------------ helpers
+
+    def fake_on_path_dir(self):
+        """A directory to prepend to `PATH` holding a `keel` a founder's shell would run.
+
+        See `test_keel_connect_check.SkillHarness.fake_on_path_dir` for why this is a generated
+        `.cmd` shim on Windows rather than the POSIX fixture script itself: `shutil.which` on
+        Windows matches by `PATHEXT`, never a bare extensionless name, so the fixture is otherwise
+        unreachable by the exact mechanism the `branch='path'` cases exist to test."""
+        if os.name != "nt":
+            return FAKE_ON_PATH_DIR
+        directory = self.tmp / "fake-keel-on-path-windows"
+        directory.mkdir(exist_ok=True)
+        shim = directory / "keel.cmd"
+        content = '@echo off\r\n"%s" "%s" %%*\r\n' % (sys.executable, FAKE_ON_PATH_DIR / "keel")
+        with open(shim, "w", newline="", encoding="utf-8") as handle:
+            handle.write(content)
+        return directory
 
     def make_skill_root(self, name="skill", bundled=None):
         """A copy of this skill somewhere else, as a packaging would make it. `_runtime_location`
@@ -174,7 +197,9 @@ class OutcomeTestCase(DisconnectHarness):
             # third resolution rule, reached honestly rather than by a flag.
             root = self.make_skill_root(name="skill-no-runtime")
             env = clean_env(FAKE_KEEL_SCENARIO=scenario, **env_extra)
-            env["PATH"] = str(FAKE_ON_PATH_DIR) + os.pathsep + "/usr/bin:/bin"
+            tail = "/usr/bin:/bin" if os.name != "nt" \
+                else os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32")
+            env["PATH"] = str(self.fake_on_path_dir()) + os.pathsep + tail
             script = root / "scripts" / "keel_disconnect.py"
         return self.run_script(script=script, args=["--home", self.home] + list(args), env=env)
 
