@@ -46,6 +46,23 @@ AMBIENT = ("KEEL_HOME", "KEEL_BASE_URL", "KEEL_RUNTIME_PATH", "KEEL_EXECUTOR", "
 # (`keel_runtime/disconnect.py`).
 TEARDOWN_KILL_SIGNAL = getattr(signal, "SIGKILL", signal.SIGTERM)
 
+
+def _cleanup_retrying_locked_files(tmp_dir, timeout_seconds=5.0):
+    """See `test_keel_connect_check._cleanup_retrying_locked_files`: `TerminateProcess()` (what
+    `os.kill` calls on Windows) does not wait for the process to exit, so a just-killed process can
+    still hold a file inside `tmp_dir` open for a moment after the kill call returns -- Windows
+    refuses to unlink an open file where POSIX allows it. This retries `tmp_dir.cleanup()` for a
+    short, bounded window rather than letting that race surface as a `PermissionError`."""
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        try:
+            tmp_dir.cleanup()
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.2)
+
 sys.path.insert(0, str(SCRIPTS))
 import keel_disconnect  # noqa: E402
 
@@ -90,7 +107,7 @@ class DisconnectHarness(unittest.TestCase):
                 os.kill(pid, TEARDOWN_KILL_SIGNAL)
             except (ProcessLookupError, PermissionError):
                 pass
-        self._tmp.cleanup()
+        _cleanup_retrying_locked_files(self._tmp)
 
     def track_pid(self, pid):
         self._pids_to_kill.append(pid)

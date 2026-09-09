@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import unittest
 from pathlib import Path
 
@@ -40,6 +41,27 @@ AMBIENT = ("KEEL_HOME", "KEEL_BASE_URL", "KEEL_RUNTIME_PATH", "KEEL_EXECUTOR", "
 # just as final a cleanup as SIGKILL is on POSIX. Mirrors keel-runtime's own
 # `KILL_SIGNAL = getattr(signal, "SIGKILL", signal.SIGTERM)` (`keel_runtime/disconnect.py`).
 TEARDOWN_KILL_SIGNAL = getattr(signal, "SIGKILL", signal.SIGTERM)
+
+
+def _cleanup_retrying_locked_files(tmp_dir, timeout_seconds=5.0):
+    """`tmp_dir.cleanup()`, tolerant of a Windows race this harness runs into on every test that
+    tracks a launched `connect`: `TerminateProcess()` (what `os.kill` calls on Windows) *requests*
+    termination and returns immediately -- it does not wait for the process to actually exit and
+    release what it had open, which here is the launch log inside this very directory, held open
+    as that process's own stdout. POSIX allows unlinking a file another process still has open
+    outright, so this is a no-op there in practice; on Windows it gives the OS a short, bounded
+    window to finish tearing the process down before its temp directory is removed, rather than
+    letting that race surface as a `PermissionError` in every test that hits it.
+    """
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        try:
+            tmp_dir.cleanup()
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.2)
 
 sys.path.insert(0, str(SCRIPTS))
 import _runtime_location  # noqa: E402
@@ -74,7 +96,7 @@ class SkillHarness(unittest.TestCase):
                 os.kill(pid, TEARDOWN_KILL_SIGNAL)
             except (ProcessLookupError, PermissionError):
                 pass
-        self._tmp.cleanup()
+        _cleanup_retrying_locked_files(self._tmp)
 
     def track_pid(self, pid):
         self._pids_to_kill.append(pid)
