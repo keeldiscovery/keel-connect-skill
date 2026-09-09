@@ -483,8 +483,8 @@ class RealDisconnectTestCase(DisconnectHarness):
         if started["outcome"] == "authorization_started":
             self.approve_device(started["user_code"])
 
-        # The heartbeat is written on the runtime's first poll cycle, a moment after the agent
-        # session exists. Waiting for it is waiting for "there is now a runtime on this home".
+        # A connected heartbeat appears a moment after the agent session exists. Waiting for it
+        # is waiting for "there is now a connected runtime on this home, credential stored".
         self.assertTrue(self.await_heartbeat(),
                         "the runtime never wrote a heartbeat on %s; its log said:\n%s"
                         % (self.home, self.launch_log()))
@@ -573,10 +573,19 @@ class RealDisconnectTestCase(DisconnectHarness):
         self.assertEqual(decision.get("status"), "APPROVED", decision)
 
     def await_heartbeat(self, seconds=60.0):
+        """Waits for a *connected* heartbeat. Since keel-runtime 80b883b the file exists from the
+        moment `connect` starts (state `awaiting_approval`, no agent session), so its mere presence
+        no longer means the credential has been stored; the walk needs the session to exist."""
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
             if self.heartbeat().exists():
-                return True
+                try:
+                    record = json.loads(self.heartbeat().read_text())
+                except (OSError, ValueError):
+                    record = {}
+                if record.get("state", "connected") != "awaiting_approval" \
+                        and record.get("agent_session_id"):
+                    return True
             time.sleep(0.25)
         return False
 
