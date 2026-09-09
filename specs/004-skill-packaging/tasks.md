@@ -116,3 +116,34 @@
   `KeelConnectSkillJourneyTest`.
 - **A Copilot plugin manifest** -- deferred until its shape has been read (decision 18).
 - **CI release automation.** `make dist` is what it would call, and it exists now.
+
+## Discovered
+
+- **The marketplace tree serves GitHub Copilot CLI too, at no extra manifest.** Copilot CLI's
+  canonical marketplace location is `.github/plugin/marketplace.json`; it also reads the
+  `.claude-plugin/` copy at the same host's marketplace path, and `github/copilot-plugins` itself
+  ships both files, byte-identical, in the one repository. `make dist` now writes
+  `dist/marketplace/.github/plugin/marketplace.json` as a copy of the stamped
+  `.claude-plugin/marketplace.json` it already wrote -- not a second generation, so the two cannot
+  drift apart -- and `tests/test_dist.py::MarketplaceTestCase::test_the_github_copilot_location_is_byte_identical`
+  is the L1 assertion that they are exactly the same bytes. `packaging/marketplace/README.md`
+  carries the two Copilot install lines (`copilot plugin marketplace add
+  keeldiscovery/keel-marketplace`, `copilot plugin install keel@keel`) alongside the two Claude
+  Code ones it already had.
+- **This makes `dist/copilot-repo` redundant for plugin distribution, not obsolete.** Once
+  `keeldiscovery/keel-marketplace` carries a Copilot-readable manifest, `copilot plugin install
+  keel@keel` is the shorter path to the same bytes `dist/copilot-repo` (the `.github/skills/`
+  drop, §8.3) also delivers -- a marketplace install needs no directory committed into a team's own
+  repository and updates with `copilot plugin update` rather than a `git pull` a maintainer has to
+  remember to make. `dist/copilot-repo` is kept anyway, for the reason §8.3 already gives it: a
+  team that wants the skill committed and reviewed like code, in a repository no marketplace or
+  network reaches, still has no other packaging that serves that.
+- **`keeldiscovery/keel-marketplace` was created and pushed, by hand, outside this repository's own
+  build** (as `What is deliberately not here` above says it would be): one commit for the tree
+  `make dist` writes, a second adding the Copilot location once its shape was read. `make dist`
+  was then brought to match those bytes exactly, rather than the other way around.
+- **This repository's `release` branch was cut** (§8.2, decision 14): an orphan branch whose root
+  is `dist/plugin/` built from this exact `master` commit, via a new `make release` target
+  (refuses on a dirty tree; force-updates `release` from the current build), pushed to
+  `origin/release`. See the commit message on that branch for the source commit and
+  `RUNTIME_VERSION` it names.

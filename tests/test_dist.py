@@ -293,6 +293,17 @@ class MarketplaceTestCase(DistTestCase):
         self.assertEqual(manifest["name"], "keel")
         self.assertIn("name", manifest["owner"])
 
+    def test_the_github_copilot_location_is_byte_identical(self):
+        """GitHub Copilot CLI's canonical marketplace location is `.github/plugin/`; it also reads
+        the `.claude-plugin/` copy, and `github/copilot-plugins` ships both. So this tree carries
+        both, and they must be the same bytes -- one manifest, two places a host looks for it,
+        never two manifests that could drift apart."""
+        claude_plugin = (DIST / "marketplace" / ".claude-plugin" / "marketplace.json").read_bytes()
+        github_plugin = (DIST / "marketplace" / ".github" / "plugin" / "marketplace.json").read_bytes()
+        self.assertEqual(claude_plugin, github_plugin,
+                         ".claude-plugin/marketplace.json and .github/plugin/marketplace.json "
+                         "must be byte-identical")
+
 
 class HostCliValidationTestCase(DistTestCase):
     """Where the host's own validator exists, it is the one that decides. Skipped, with a message,

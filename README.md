@@ -53,6 +53,7 @@ The design of record is keel-cloud `canon/designs/keel-skill-design.md`.
 ```sh
 make runtime          # copies ../keel-runtime/keel_runtime/ in and stamps RUNTIME_VERSION
 make dist             # builds the four packaging trees from this one source
+make release          # cuts/force-updates the `release` branch from dist/plugin/, and pushes it
 make test             # python3 -m unittest discover tests -v
 ```
 
@@ -60,6 +61,15 @@ make test             # python3 -m unittest discover tests -v
 must be able to name exactly what was copied. Point it elsewhere with
 `make runtime KEEL_RUNTIME_SRC=<path>`, and run the tests on another interpreter with
 `make test PYTHON=/usr/bin/python3`.
+
+`make release` is what `keeldiscovery/keel-marketplace` installs from (design §8.2, decision 14):
+it refuses on a dirty working tree, runs `make dist`, then builds `dist/plugin/` into an **orphan
+root commit** -- no parent, so the branch's tip is always exactly the tree this exact `master`
+commit builds -- names the source commit and `RUNTIME_VERSION` in the commit message, force-updates
+the local `release` branch to it, and force-pushes `origin/release`. Reproducible: the same
+`master` commit and the same `../keel-runtime` checkout build the same tree and the same commit
+object every time, because the commit's author/committer dates are pinned to `master`'s own commit
+date rather than to when `make release` happened to run.
 
 ## The four packagings
 
@@ -85,10 +95,12 @@ Two more things are written beside them and are **not** shipped in any tree:
 ### What is the founder's to do by hand
 
 `make dist` writes directories. Everything with a consequence outside this machine stays a person's
-decision, and none of it is automated here: creating `keeldiscovery/keel-marketplace` and pushing
-`dist/marketplace/` into it; cutting this repository's `release` branch with `dist/plugin/` at its
-root; publishing `dist/speckit/` to `keeldiscovery/spec-kit-keel` and creating the release; and
-filing the Spec Kit *Extension Submission* issue with `dist/speckit-catalog-entry.json` pasted in.
+decision. `make release` (above) automates cutting this repository's `release` branch and pushing
+it, but not what still is not automated: creating `keeldiscovery/keel-marketplace` in the first
+place and pushing `dist/marketplace/` into it when the version moves (done by hand once already,
+kept in step with the template by `tests/test_dist.py`); publishing `dist/speckit/` to
+`keeldiscovery/spec-kit-keel` and creating the release there; and filing the Spec Kit *Extension
+Submission* issue with `dist/speckit-catalog-entry.json` pasted in.
 
 ### Two things measured while building this
 

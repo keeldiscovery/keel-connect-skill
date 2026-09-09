@@ -6,6 +6,7 @@
 #
 #   make runtime    copy ../keel-runtime/keel_runtime/ in, and stamp RUNTIME_VERSION
 #   make dist       build the four packaging trees (plus the marketplace) from this one source
+#   make release    cut/force-update the `release` branch from dist/plugin/, and push it
 #   make test       this repository's own tests, offline, against fake and real runtimes
 #   make clean      remove the copied package, the built trees and the caches
 #
@@ -33,7 +34,7 @@ VERSION := $(shell cat VERSION)
 # The three things that are copied into every tree, identically, and nothing else (D1, D2).
 SKILL_FILES := SKILL.md scripts keel_runtime
 
-.PHONY: runtime dist test clean
+.PHONY: runtime dist release test clean
 
 runtime:
 	@set -euo pipefail; \
@@ -132,10 +133,48 @@ dist:
 	\
 	echo "dist/marketplace   the keeldiscovery/keel-marketplace tree (the repo is the founder's to create)"; \
 	$(call stamp,packaging/marketplace/marketplace.json.in,dist/marketplace/.claude-plugin/marketplace.json); \
+	mkdir -p dist/marketplace/.github/plugin; \
+	cp dist/marketplace/.claude-plugin/marketplace.json dist/marketplace/.github/plugin/marketplace.json; \
 	cp packaging/marketplace/README.md dist/marketplace/README.md; \
 	cp LICENSE dist/marketplace/LICENSE; \
 	\
 	echo "VERSION $(VERSION)  RUNTIME_VERSION $$(cat RUNTIME_VERSION)"
+
+# The `release` branch (design §8.2, decision 14): an orphan branch whose root is `dist/plugin/`
+# built from this exact `master` commit, and nothing else -- the tree `keeldiscovery/keel-marketplace`
+# points `claude plugin install keel@keel` and `copilot plugin install keel@keel` at. Reproducible:
+# built with `git commit-tree` rather than a checkout, so no working tree or index is disturbed,
+# and the commit's author/committer dates are pinned to `master`'s own commit date (not to when
+# `make release` happened to run), so the same `master` commit and the same `../keel-runtime`
+# checkout build the identical tree and the identical commit object every time.
+release:
+	@set -euo pipefail; \
+	if [ -n "$$(git status --porcelain)" ]; then \
+	  echo "make release: working tree is dirty -- the release branch is cut from a committed" >&2; \
+	  echo "  master, never from bytes nobody can name. Commit or stash first:" >&2; \
+	  git status --short >&2; \
+	  exit 1; \
+	fi; \
+	$(MAKE) dist; \
+	if [ ! -f dist/plugin/.claude-plugin/plugin.json ]; then \
+	  echo "make release: dist/plugin/.claude-plugin/plugin.json is missing after \`make dist\`" >&2; \
+	  exit 1; \
+	fi; \
+	commit=$$(git rev-parse HEAD); \
+	short=$$(git rev-parse --short HEAD); \
+	runtime_version=$$(cat RUNTIME_VERSION); \
+	source_date=$$(git show -s --format=%aI HEAD); \
+	index=$$(mktemp); rm -f "$$index"; \
+	tree=$$(GIT_INDEX_FILE="$$index" GIT_WORK_TREE="$(CURDIR)/dist/plugin" git add -A -- . >&2 \
+	  && GIT_INDEX_FILE="$$index" git write-tree); \
+	rm -f "$$index"; \
+	message=$$(printf 'release %s: dist/plugin/ built from master %s (RUNTIME_VERSION %s)\n\nAn orphan root commit -- the plugin tree `make dist` builds from this exact master\ncommit, and nothing else. `make release` force-updates this branch to a fresh root\nlike this one whenever master or RUNTIME_VERSION moves.\n' \
+	  "$(VERSION)" "$$short" "$$runtime_version"); \
+	new_commit=$$(GIT_AUTHOR_DATE="$$source_date" GIT_COMMITTER_DATE="$$source_date" \
+	  git commit-tree "$$tree" -m "$$message"); \
+	git branch -f release "$$new_commit"; \
+	git push --force origin release:refs/heads/release; \
+	echo "release -> $$new_commit  (orphan root; dist/plugin/ from master $$short, RUNTIME_VERSION $$runtime_version)"
 
 test:
 	$(PYTHON) -m unittest discover tests -v

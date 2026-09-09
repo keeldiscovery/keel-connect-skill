@@ -12,7 +12,14 @@ browser, and the Keel runtime on your machine is connected. Say "keel disconnect
 
 ## What is in here
 
-`.claude-plugin/marketplace.json`, and nothing else. It names one plugin whose source is the
+`.claude-plugin/marketplace.json` and a byte-identical `.github/plugin/marketplace.json` — the first is where Claude Code looks, the second where GitHub Copilot CLI looks (it reads the `.claude-plugin/` copy too), so one repository serves both hosts:
+
+```bash
+copilot plugin marketplace add keeldiscovery/keel-marketplace
+copilot plugin install keel@keel
+```
+
+Nothing else. It names one plugin whose source is the
 **`release` branch of [`keeldiscovery/keel-connect-skill`](https://github.com/keeldiscovery/keel-connect-skill)** —
 that branch's root is the built plugin tree. One repository stays authoritative and browsable, and
 there is no second copy of the skill to keep in step.
