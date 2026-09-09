@@ -147,3 +147,61 @@
   (refuses on a dirty tree; force-updates `release` from the current build), pushed to
   `origin/release`. See the commit message on that branch for the source commit and
   `RUNTIME_VERSION` it names.
+
+## Acceptance evidence: installable end to end (2026-09-09, this Mac)
+
+Measured after `master` 2b30230 was pushed and `make release` cut `origin/release` at 3a51310
+(root; `dist/plugin/` from that commit, `RUNTIME_VERSION 0.1.0+a0756b6`). Both marketplaces were
+private-or-public as GitHub had them at the time; no visibility change was made for this test.
+
+**Claude Code (2.1.263).**
+```
+$ claude plugin marketplace add keeldiscovery/keel-marketplace
+Adding marketplace…Cloning via SSH: git@github.com:keeldiscovery/keel-marketplace.git
+✔ Successfully added marketplace: keel (declared in user settings)
+$ claude plugin install keel@keel
+Installing plugin "keel@keel"...✔ Successfully installed plugin: keel@keel (scope: user)
+$ claude plugin list
+Installed plugins:
+  ❯ keel@keel
+    Version: 1.0.0
+    Scope: user
+    Status: ✔ enabled
+```
+`SKILL.md` landed at `~/.claude/plugins/cache/keel/keel/1.0.0/skills/keel-connect/SKILL.md`. The
+add succeeded through the founder's own SSH git credentials (`git@github.com:...`), so this proves
+nothing about whether the repository is public to a stranger.
+
+**GitHub Copilot CLI (1.0.83).**
+```
+$ copilot plugin marketplace add keeldiscovery/keel-marketplace
+Marketplace "keel" added successfully.
+$ copilot plugin install keel@keel
+Plugin "keel" installed successfully. Installed 1 skill.
+$ copilot plugin list
+Installed plugins:
+  • keel@keel (v1.0.0)
+$ copilot skill list
+Project skills:
+  keel-connect - Use when the user says or means "keel connect" ...
+Builtin skills:
+  customize-cloud-agent - ...
+  github-pr-media - ...
+```
+`keel-connect` is listed separately from Copilot's two `Builtin skills` under its own "Project
+skills" heading -- Copilot's label for a skill a plugin provided, distinct from a skill it ships
+with. It landed at `~/.copilot/installed-plugins/keel/keel/skills/keel-connect/`. **Contrary to
+the concern this task was framed with, Copilot's plain clone did not fail on auth** -- it added
+and installed cleanly on the same run, same machine, same repository visibility.
+
+**Cleanup, both hosts, confirmed by each CLI's own listing going back to empty:**
+```
+$ copilot plugin uninstall keel@keel && copilot plugin marketplace remove keel
+$ claude plugin uninstall keel@keel && claude plugin marketplace remove keel
+```
+`claude plugin list` / `claude plugin marketplace list` and `copilot plugin list` /
+`copilot plugin marketplace list` all report nothing installed and only each host's stock
+marketplace afterward. Left behind, and not cleaned further because neither CLI's own state
+considers it installed: `~/.claude/plugins/cache/keel/` and
+`~/.copilot/Library/Caches/copilot/marketplaces/keeldiscovery-*` -- ordinary download caches, the
+same shape either tool leaves after uninstalling anything.
