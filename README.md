@@ -1,8 +1,9 @@
 # keel-connect-skill
 
-An agent skill: when a user says or clearly means "keel connect", check whether a local Keel
-runtime is already running and connected to Keel Cloud, and if not, start it for them and hand back
-the code and URL they need to approve the device.
+An agent skill with two jobs and one connection: when a user says or clearly means "keel connect",
+check whether a local Keel runtime is already running and connected to Keel Cloud, and if not,
+start it for them and hand back the code and URL they need to approve the device -- and when they
+say "keel disconnect", stop that runtime and prove it is gone.
 
 **The runtime travels inside the skill.** `keel_runtime/` is copied in from the
 [keel-runtime](../keel-runtime) repository by `make runtime` and ships beside
@@ -26,15 +27,18 @@ The design of record is keel-cloud `canon/designs/keel-skill-design.md`.
 ## Layout
 
 - `SKILL.md` -- trigger condition and outcome-interpretation instructions for the agent host.
-- `scripts/keel_connect_check.py` -- the whole implementation. Stdlib-only Python, invoked as a
-  subprocess, printing one line of JSON.
-- `scripts/_runtime_location.py` -- the resolution order, shared by every script in this skill.
+- `scripts/keel_connect_check.py` -- the door in. Stdlib-only Python, invoked as a subprocess,
+  printing one line of JSON.
+- `scripts/keel_disconnect.py` -- the door out. Same discipline, six outcomes of its own, and no
+  way to start anything.
+- `scripts/_runtime_location.py` -- the resolution order, shared whole by both scripts.
 - `keel_runtime/` -- **generated, gitignored**, written by `make runtime`. There is one copy of the
   runtime's source in the world and it is in keel-runtime; every copy here is made by a build step
   from one named commit.
 - `RUNTIME_VERSION` -- committed: which keel-runtime this skill carries.
 - `specs/` -- the design docs: `001-keel-connect-check` (the original script, and the output
-  contract, which lives there and is rewritten in place) and `003-bundled-runtime` (this one).
+  contract, which lives there and is rewritten in place), `002-keel-disconnect` (the door out and
+  its own contract) and `003-bundled-runtime` (the runtime travelling inside).
 - `tests/` -- this repository's own tests: fast, offline, mostly against fake runtimes in
   `tests/fixtures/`, plus a handful against the real bundled runtime.
 
@@ -65,6 +69,17 @@ One of seven outcomes: `already_connected`, `connected`, `authorization_started`
 one line of JSON, exit 0 for all of them except `internal_error`. The exhaustive, stable contract
 is `specs/001-keel-connect-check/contracts/skill-script-output.md`.
 
+```sh
+python3 scripts/keel_disconnect.py
+# {"outcome": "disconnected", "pid": 41213, "waited_ms": 84, "signal": "SIGTERM", "environment": "cloud"}
+```
+
+One of six outcomes: `disconnected`, `not_running`, `stale_pid_cleared`, `did_not_stop`,
+`runtime_unavailable`, `internal_error`. Same rules -- one line of JSON, exit 0 for all of them
+except `internal_error`. The exhaustive, stable contract is
+`specs/002-keel-disconnect/contracts/skill-disconnect-output.md`. It starts nothing, contacts
+nothing and never touches a credential: a disconnect stops a process, it does not forget a machine.
+
 Which runtime runs, in order: a checkout named by `--runtime-path`/`KEEL_RUNTIME_PATH` (a
 development override), then the `keel_runtime/` that travelled with this skill, then a `keel` on
 `PATH`. **The bundled copy beats a `keel` on `PATH`** -- it is the runtime this skill's own tests
@@ -76,11 +91,19 @@ ran against, and a stranger's install must not shadow it silently.
 python3 -m unittest discover tests -v
 ```
 
-Every outcome branch, the version gate under a faked old interpreter, all three resolution rules
-and their order, the host-detection table, and the real bundled runtime answering from an empty
-home. Offline, and no real Keel Cloud server anywhere -- the one network-shaped thing is a
+Every outcome branch of both scripts, the version gate under a faked old interpreter, all three
+resolution rules and their order, the host-detection table, and the real bundled runtime answering
+from an empty home. Offline by default -- the one network-shaped thing in the connect module is a
 `connect` launched at a closed local port, which is exactly what `authorization_pending_timeout`
 looks like.
+
+**One test is not offline, and says so in its name.** `RealDisconnectTestCase` starts a real
+runtime against a real keel-cloud through the connect script, stops it with the disconnect script,
+and asserts `disconnected` then `not_running`. It **skips itself** when nothing is listening at
+`KEEL_BASE_URL` (default `http://localhost:18081` -- the playground stack, `make up
+PROFILE=playground` in keel-e2e-eval), so an offline run and CI are unaffected. It is the one place
+this repository speaks keel-cloud's own wire, to stand in for the founder's browser click at
+`/connect`.
 
 ## The real three-tier proof lives elsewhere
 

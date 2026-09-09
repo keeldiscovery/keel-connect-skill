@@ -27,6 +27,7 @@ import time
 
 DEFAULT_ENVIRONMENT = "fake-cloud.test"
 CONNECT_ARGV_FILENAME = "connect-argv.json"
+DISCONNECT_ARGV_FILENAME = "disconnect-argv.json"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -43,6 +44,14 @@ def build_parser() -> argparse.ArgumentParser:
     connect.add_argument("--credential-backend")
     connect.add_argument("--no-browser", action="store_true")
 
+    # spec `002-keel-disconnect`: the same subcommand keel-runtime grew, with the four outcomes of
+    # its own contract driven by the same FAKE_KEEL_SCENARIO variable. The sibling fixture
+    # `fake_runtime_no_disconnect/` is the one that deliberately does *not* have this parser, so
+    # the old-runtime path into `internal_error` is a real argparse failure and not a mock of one.
+    disconnect = sub.add_parser("disconnect")
+    disconnect.add_argument("--home")
+    disconnect.add_argument("--base-url")
+
     return parser
 
 
@@ -55,6 +64,8 @@ def main(argv=None) -> int:
         return _run_status(scenario, args.home)
     if args.command == "connect":
         return _run_connect(scenario, args.home, raw_argv)
+    if args.command == "disconnect":
+        return _run_disconnect(scenario, args.home, raw_argv)
     return 1  # pragma: no cover -- argparse's required=True makes this dead
 
 
@@ -138,6 +149,61 @@ def _run_connect(scenario: str, home_flag, raw_argv) -> int:
     # rather than trivially true because the fake exited immediately.
     while True:
         time.sleep(0.2)
+
+
+# ------------------------------------------------------------- disconnect (spec 002-keel-disconnect)
+
+# The four shapes of keel-runtime's own stable contract
+# (`specs/003-keel-disconnect/contracts/disconnect-cli-output.md`), keyed by the scenario name a
+# test sets in FAKE_KEEL_SCENARIO. `stopped_sigkill` is the escalation half of `stopped`, and
+# `unknown_outcome` is a runtime newer than this skill -- one of the ways `internal_error` is
+# reached without the runtime having crashed.
+DISCONNECT_SHAPES = {
+    "stopped": {"outcome": "stopped", "pid": 41213, "waited_ms": 84, "signal": "SIGTERM"},
+    "stopped_sigkill": {"outcome": "stopped", "pid": 41213, "waited_ms": 10004,
+                        "signal": "SIGKILL"},
+    "stale_pid": {"outcome": "stale_pid_cleared", "pid": 40118},
+    "timeout": {"outcome": "timeout", "pid": 41213, "waited_ms": 15003},
+    "unknown_outcome": {"outcome": "went_sideways", "pid": 41213},
+}
+
+
+def _disconnect_address_keys(home) -> dict:
+    """The three address keys the disconnect contract puts on all four of its shapes.
+
+    `executor` and `executor_on_path`, which `status` carries, are deliberately absent: no executor
+    takes part in a disconnect.
+    """
+    environment = os.environ.get("FAKE_KEEL_ENVIRONMENT", DEFAULT_ENVIRONMENT)
+    return {"home": home, "base_url": "http://" + environment, "environment": environment}
+
+
+def _run_disconnect(scenario: str, home_flag, raw_argv) -> int:
+    home = _home_for(home_flag)
+    if home:
+        # The whole argv is recorded so a test can assert exactly what was passed through --
+        # `--home` above all, which is the one flag this script resolves rather than relays.
+        os.makedirs(home, exist_ok=True)
+        with open(os.path.join(home, DISCONNECT_ARGV_FILENAME), "w", encoding="utf-8") as handle:
+            json.dump({"scenario": scenario, "argv": raw_argv}, handle)
+
+    if scenario == "disconnect_crash":
+        # Deliberately violates the runtime's own contract (non-JSON on stdout, non-zero exit).
+        print("not json", flush=True)
+        return 1
+
+    if scenario == "disconnect_two_lines":
+        # One JSON line is the promise; two is a broken one, and reaches `internal_error` without
+        # the runtime having crashed at all.
+        print(json.dumps({"outcome": "not_running"}))
+        print(json.dumps({"outcome": "not_running"}))
+        return 0
+
+    # Anything this fixture was not asked to act out is the idempotent answer: nothing running.
+    result = dict(DISCONNECT_SHAPES.get(scenario, {"outcome": "not_running"}))
+    result.update(_disconnect_address_keys(home))
+    print(json.dumps(result))
+    return 0
 
 
 if __name__ == "__main__":
