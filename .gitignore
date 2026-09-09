@@ -13,3 +13,7 @@ venv/
 # skill carries, is committed; the package it names is not. Rooted, so the fake runtime fixtures
 # under tests/ are untouched.
 /keel_runtime/
+
+# The four packaging trees and the marketplace, built by `make dist` from the one source in
+# this repository (design §8.1). Never committed: a copy a build step makes and a test compares.
+/dist/

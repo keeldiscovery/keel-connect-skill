@@ -1,0 +1,31 @@
+{
+  "$schema": "https://code.claude.com/schemas/marketplace.json",
+  "name": "keel",
+  "owner": {
+    "name": "Keel Discovery",
+    "url": "https://github.com/keeldiscovery"
+  },
+  "description": "Keel's own plugins for Claude Code. One today: the skill that connects the local Keel runtime to Keel Cloud, and stops it again.",
+  "plugins": [
+    {
+      "name": "keel",
+      "displayName": "Keel Connect",
+      "source": {
+        "source": "github",
+        "repo": "keeldiscovery/keel-connect-skill",
+        "ref": "release"
+      },
+      "description": "Connect the local Keel runtime to Keel Cloud without leaving your agent, and stop it again when you ask. The runtime travels inside the plugin; Python 3.9 or newer is the one prerequisite.",
+      "version": "${VERSION}",
+      "author": {
+        "name": "Keel Discovery",
+        "url": "https://github.com/keeldiscovery"
+      },
+      "homepage": "https://github.com/keeldiscovery/keel-connect-skill",
+      "repository": "https://github.com/keeldiscovery/keel-connect-skill",
+      "license": "Apache-2.0",
+      "category": "infrastructure",
+      "keywords": ["keel", "runtime", "connect", "agent", "infrastructure"]
+    }
+  ]
+}
