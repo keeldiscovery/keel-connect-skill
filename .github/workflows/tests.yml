@@ -1,0 +1,85 @@
+# The skill and the runtime must agree about the floor, and the only way to know is to run both at
+# it (keel-cloud `canon/designs/keel-skill-design.md` §4.2, spec `003-bundled-runtime` FR-012).
+#
+# 3.9 is the floor because Apple's command-line tools ship 3.9.6; 3.13 is the ceiling anybody has
+# today. Every row stages the runtime the way `make runtime` does -- from a real checkout of
+# keel-runtime at the commit `RUNTIME_VERSION` names -- because a matrix that tested a hand-placed
+# package would be testing something no founder receives (T-1).
+#
+# **This matrix installs nothing.** Not the skill, not the runtime, and above all not `keyring` or
+# `jsonschema`: the shipped behaviour is the one without them (R-2), so that is the configuration
+# tested.
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  suite:
+    name: py${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        include:
+          - os: macos-latest
+            python-version: "3.9"
+          - os: macos-latest
+            python-version: "3.13"
+          - os: windows-latest
+            python-version: "3.9"
+          - os: windows-latest
+            python-version: "3.13"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: keel-connect-skill
+
+      # `make runtime` copies from a sibling checkout. In CI that sibling is a real clone of the
+      # runtime's own repository -- not a vendored copy in this one (D2).
+      - uses: actions/checkout@v4
+        with:
+          repository: keeldiscovery/keel-runtime
+          path: keel-runtime
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Assert keyring and jsonschema are absent (R-2)
+        shell: python
+        run: |
+          import importlib.util
+          import sys
+
+          present = [
+              name
+              for name in ("keyring", "jsonschema")
+              if importlib.util.find_spec(name) is not None
+          ]
+          if present:
+              sys.exit(
+                  "R-2: %s installed -- this row would test a configuration nobody has" % present
+              )
+          print("absent, as they should be: keyring, jsonschema")
+
+      - name: Stage the runtime the way a packaging does
+        shell: bash
+        working-directory: keel-connect-skill
+        run: make runtime KEEL_RUNTIME_SRC=../keel-runtime PYTHON=python
+
+      - name: The suite
+        shell: bash
+        working-directory: keel-connect-skill
+        run: python -m unittest discover tests -v
+
+      - name: What a founder's machine does first, with no flag at all
+        shell: bash
+        working-directory: keel-connect-skill
+        run: python scripts/keel_connect_check.py --wait-seconds 0
