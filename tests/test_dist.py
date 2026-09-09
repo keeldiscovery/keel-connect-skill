@@ -40,6 +40,39 @@ TREES = {
     "copilot-repo": DIST / "copilot-repo" / ".github" / "skills" / "keel-connect",
 }
 
+def _find_bash():
+    """A real `bash`, not `%SystemRoot%\\System32\\bash.exe` -- the WSL launcher stub GitHub's
+    `windows-latest` runners put on `PATH` ahead of Git for Windows' own `bash.exe`. With no WSL
+    distribution installed (true of every runner in this repository's matrix) that stub exits
+    non-zero before running anything, which every caller of `_find_bash` here would otherwise read
+    as this repository's script failing to parse. Git for Windows' bash is a real POSIX `bash` --
+    the one `install.sh`, `test-install.sh` and their tests need -- so it is checked for by its own
+    known install locations first; `shutil.which("bash")` (which will find the stub) is the
+    fallback everywhere else, including on a Windows machine with no Git for Windows at all, so a
+    caller still gets a clear "no bash here" skip rather than a wrong binary silently substituted.
+    """
+    if os.name == "nt":
+        seen = set()
+        for env_var in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"):
+            base = os.environ.get(env_var)
+            if not base or base in seen:
+                continue
+            seen.add(base)
+            for tail in (r"Git\bin\bash.exe", r"Git\usr\bin\bash.exe"):
+                candidate = os.path.join(base, tail)
+                if os.path.isfile(candidate):
+                    return candidate
+    return shutil.which("bash")
+
+
+def _find_pwsh():
+    """PowerShell 7+ -- preinstalled on every GitHub-hosted runner in this repository's matrix
+    (`windows-latest`, `macos-latest`, `ubuntu-latest`), so this needs no Windows-only fallback the
+    way `_find_bash` does; a developer machine with neither `pwsh` nor Windows PowerShell simply
+    skips, the same way a machine with no `bash` does."""
+    return shutil.which("pwsh")
+
+
 _BUILD_ERROR = None
 
 
@@ -372,8 +405,9 @@ class SpecKitManifestTestCase(DistTestCase):
         self.assertTrue(script.is_file())
         if os.name == "posix":
             self.assertTrue(os.access(str(script), os.X_OK), "test-install.sh must be executable")
-        if shutil.which("bash") is not None:
-            parsed = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True)
+        bash = _find_bash()
+        if bash is not None:
+            parsed = subprocess.run([bash, "-n", str(script)], capture_output=True, text=True)
             self.assertEqual(parsed.returncode, 0, parsed.stderr)
 
 
@@ -430,24 +464,41 @@ class CatalogueEntryTestCase(DistTestCase):
 # ================================================================================ bare, and Copilot
 
 
-class BareInstallerTestCase(DistTestCase):
-    """`bare/install.sh --host claude|copilot|agents` -- the personal install as a flag, not a
-    fifth tree (decision 13)."""
+class _BareInstallerBehaviorMixin:
+    """`bare/install.{sh,ps1} --host claude|copilot|agents` -- the personal install as a flag, not
+    a fifth tree (decision 13). One source behaviour, tested through whichever of the two shells
+    this machine can actually run: `install.sh` is POSIX and needs `bash`; Windows has no `sh`, so
+    it gets `install.ps1` instead (added 2026-09-09, keel-runtime acceptance run 34344993957's
+    Windows job). Every concrete subclass below names its script, its interpreter, and how to spell
+    the same four flags in that shell; `setUp` runs a subclass only on the OS its script targets,
+    and skips it (never fails it) everywhere else or where the interpreter is missing -- exactly
+    one of the two concrete subclasses reaches its tests' bodies on any given machine.
+    """
+
+    SCRIPT_NAME = None    # set by subclass: "install.sh" or "install.ps1"
+    RUNS_ON_NT = None     # set by subclass: True for install.ps1, False for install.sh
+    # Windows path separators here on purpose when RUNS_ON_NT: os.path.join already gives the
+    # right one for the OS this subclass only ever runs on.
+    FORBIDDEN_IN_SOURCE = ()
+
+    def find_interpreter(self):
+        raise NotImplementedError
+
+    def argv_for(self, host=None, project=False, dry_run=False, force=False):
+        """The interpreter-prefixed argv for one run, in this shell's own flag spelling."""
+        raise NotImplementedError
 
     def installer(self):
-        return DIST / "bare" / "install.sh"
+        return DIST / "bare" / self.SCRIPT_NAME
 
     def setUp(self):
         super().setUp()
-        if shutil.which("bash") is None:
-            self.skipTest("no bash here to run the installer with")
-
-    def test_it_is_executable_and_parses(self):
-        if os.name == "posix":
-            self.assertTrue(os.access(str(self.installer()), os.X_OK))
-        parsed = subprocess.run(["bash", "-n", str(self.installer())],
-                                capture_output=True, text=True)
-        self.assertEqual(parsed.returncode, 0, parsed.stderr)
+        if (os.name == "nt") != self.RUNS_ON_NT:
+            self.skipTest("%s targets %s; not this machine" % (
+                self.SCRIPT_NAME, "Windows" if self.RUNS_ON_NT else "POSIX"))
+        self.interpreter = self.find_interpreter()
+        if self.interpreter is None:
+            self.skipTest("no interpreter here to run %s with" % self.SCRIPT_NAME)
 
     def test_the_skill_sits_beside_it(self):
         self.assertTrue((DIST / "bare" / "keel-connect" / "SKILL.md").is_file())
@@ -462,28 +513,90 @@ class BareInstallerTestCase(DistTestCase):
         }
         for (host, project), tail in expected.items():
             with self.subTest(host=host, project=project):
-                argv = ["bash", str(self.installer()), "--host", host, "--dry-run"]
-                if project:
-                    argv.append("--project")
+                argv = self.argv_for(host=host, project=project, dry_run=True)
                 completed = subprocess.run(argv, capture_output=True, text=True,
                                            cwd=str(DIST), timeout=60)
                 self.assertEqual(completed.returncode, 0, completed.stderr)
                 self.assertIn(tail.replace("$HOME", os.path.expanduser("~")), completed.stdout)
                 self.assertIn("nothing copied", completed.stdout,
-                              "--dry-run must copy nothing")
+                              "--dry-run/-DryRun must copy nothing")
 
     def test_an_unknown_host_is_refused_rather_than_guessed(self):
-        completed = subprocess.run(
-            ["bash", str(self.installer()), "--host", "emacs", "--dry-run"],
-            capture_output=True, text=True, cwd=str(DIST), timeout=60)
+        argv = self.argv_for(host="emacs", dry_run=True)
+        completed = subprocess.run(argv, capture_output=True, text=True, cwd=str(DIST), timeout=60)
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("unknown host", completed.stderr)
 
     def test_it_really_copies_and_edits_nothing_outside_the_destination(self):
         """X-6: no `PATH` edit, no shell-profile edit, ever."""
         source = self.installer().read_text(encoding="utf-8")
-        for forbidden in (".bashrc", ".zshrc", ".profile", "export PATH", "/etc/"):
+        for forbidden in self.FORBIDDEN_IN_SOURCE:
             self.assertNotIn(forbidden, source)
+
+
+class BareInstallerTestCase(_BareInstallerBehaviorMixin, DistTestCase):
+    """The POSIX shell: `install.sh`, run with `bash`."""
+
+    SCRIPT_NAME = "install.sh"
+    RUNS_ON_NT = False
+    FORBIDDEN_IN_SOURCE = (".bashrc", ".zshrc", ".profile", "export PATH", "/etc/")
+
+    def find_interpreter(self):
+        return _find_bash()
+
+    def argv_for(self, host=None, project=False, dry_run=False, force=False):
+        argv = [self.interpreter, str(self.installer())]
+        if host is not None:
+            argv += ["--host", host]
+        if project:
+            argv.append("--project")
+        if dry_run:
+            argv.append("--dry-run")
+        if force:
+            argv.append("--force")
+        return argv
+
+    def test_it_is_executable_and_parses(self):
+        if os.name == "posix":
+            self.assertTrue(os.access(str(self.installer()), os.X_OK))
+        parsed = subprocess.run([self.interpreter, "-n", str(self.installer())],
+                                capture_output=True, text=True)
+        self.assertEqual(parsed.returncode, 0, parsed.stderr)
+
+
+class BareInstallerWindowsTestCase(_BareInstallerBehaviorMixin, DistTestCase):
+    """Windows has no `sh`: `install.ps1`, run with `pwsh`. Same behaviour as `install.sh`, in
+    PowerShell's own flag spelling (`-HostName` rather than `-Host` -- PowerShell's automatic
+    `$Host` variable makes `-Host` an unusable parameter name; see the script's own docstring)."""
+
+    SCRIPT_NAME = "install.ps1"
+    RUNS_ON_NT = True
+    FORBIDDEN_IN_SOURCE = ("$PROFILE", "SetEnvironmentVariable", "$env:Path =", "$env:PATH =")
+
+    def find_interpreter(self):
+        return _find_pwsh()
+
+    def argv_for(self, host=None, project=False, dry_run=False, force=False):
+        argv = [self.interpreter, "-NoProfile", "-File", str(self.installer())]
+        if host is not None:
+            argv += ["-HostName", host]
+        if project:
+            argv.append("-Project")
+        if dry_run:
+            argv.append("-DryRun")
+        if force:
+            argv.append("-Force")
+        return argv
+
+    def test_it_parses(self):
+        check = (
+            "$errs = $null; "
+            "$null = [System.Management.Automation.Language.Parser]::ParseFile(%s, [ref]$null, [ref]$errs); "
+            "if ($errs.Count) { $errs | ForEach-Object { [Console]::Error.WriteLine($_.ToString()) }; exit 1 }"
+        ) % json.dumps(str(self.installer()))
+        parsed = subprocess.run([self.interpreter, "-NoProfile", "-Command", check],
+                                capture_output=True, text=True, timeout=60)
+        self.assertEqual(parsed.returncode, 0, parsed.stderr)
 
 
 class CopilotRepoDropTestCase(DistTestCase):

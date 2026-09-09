@@ -122,6 +122,7 @@ dist:
 	$(call place_skill,dist/bare/keel-connect); \
 	cp packaging/bare/install.sh dist/bare/install.sh; \
 	chmod +x dist/bare/install.sh; \
+	cp packaging/bare/install.ps1 dist/bare/install.ps1; \
 	cp LICENSE dist/bare/LICENSE; \
 	\
 	echo "dist/copilot-repo  the directory a team commits"; \
