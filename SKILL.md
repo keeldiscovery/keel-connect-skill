@@ -1,26 +1,41 @@
 ---
 name: "keel-connect"
-description: "Check whether the user's local Keel runtime (keel-runtime) is connected to Keel Cloud, and start it if it isn't. Invoke this whenever the user types or clearly means \"keel connect\" -- including phrasings like \"connect keel\", \"start the keel runtime\", \"launch keel connect\", \"is keel connected\", or \"check keel's status\". This skill only understands the local keel-runtime process; it has no knowledge of Keel's discovery protocol, MCP, or any other Keel-branded skill."
-user-invocable: true
-disable-model-invocation: false
+description: "Use when the user says or means \"keel connect\" -- including \"connect keel\", \"start the keel runtime\", \"launch keel connect\", \"is keel connected\", \"check keel's status\" -- or \"keel disconnect\", \"stop the keel runtime\", \"shut keel down\", \"keel off\"; or when a Keel action has just failed because no runtime is connected. Covers only the local keel-runtime process on this machine, not Keel's discovery protocol or any MCP server."
+license: "Apache-2.0"
 ---
 
 ## What this skill does
 
-One job: decide whether a Keel runtime is already running and connected to Keel Cloud on this
-machine, and if not, start it for the user and hand back what they need to approve it. Nothing here
-understands what a connected runtime is *for* -- that is Keel Cloud's and the runtime's own
-business, not this skill's.
+Two jobs, one connection: decide whether a Keel runtime is already running and connected to Keel
+Cloud on this machine and start it if it is not -- and **stop it again when the user asks**.
+Nothing here understands what a connected runtime is *for* -- that is Keel Cloud's and the
+runtime's own business, not this skill's.
+
+## Two jobs, and which is which
+
+**Starting or checking** -- anything that means "connect", "start", "is it running" -- runs
+`scripts/keel_connect_check.py`.
+
+**Stopping** -- anything that means "disconnect", "stop", "shut down", "stop polling" -- runs
+`scripts/keel_disconnect.py`.
+
+If the request is ambiguous, **ask which they meant; never run the connect check to find out.**
+The connect check's whole job is to *start* a runtime when none is running -- running it on a
+request that meant "stop" does the opposite of what was asked, silently. The disconnect script has
+no such hazard: run against a home with nothing on it, it answers `not_running` and starts nothing.
+Ambiguity therefore resolves toward disconnect, and toward asking.
 
 **The runtime travels inside this skill.** `keel_runtime/` sits beside `scripts/`, and the script
 runs it with the interpreter that ran the script. Nothing is downloaded and nothing has to be
 installed. The one thing the user might not already have is a Python 3.9 or newer.
 
-All of the actual logic lives in one deterministic script, `scripts/keel_connect_check.py` (path
-resolved relative to this `SKILL.md`'s own directory). Run it, parse its one line of JSON, and
-follow the instructions below for the `outcome` you get back. Its full, stable contract is
-`specs/001-keel-connect-check/contracts/skill-script-output.md` -- read that file if anything below
-is ambiguous; it is the source of truth and this is a summary for quick use.
+All of the actual logic lives in two deterministic scripts, `scripts/keel_connect_check.py` and
+`scripts/keel_disconnect.py` (paths resolved relative to this `SKILL.md`'s own directory). Run the
+one the request calls for, parse its one line of JSON, and follow the instructions below for the
+`outcome` you get back. Their full, stable contracts are
+`specs/001-keel-connect-check/contracts/skill-script-output.md` and
+`specs/002-keel-disconnect/contracts/skill-disconnect-output.md` -- read those files if anything
+below is ambiguous; they are the source of truth and this is a summary for quick use.
 
 ## Running the check
 
@@ -93,6 +108,67 @@ all. This is the only outcome that exits non-zero.
 > Tell the user something unexpected happened, share the `message`, and suggest they check their
 > Keel installation directly. Do not guess at a fix on their behalf.
 
+## Running the disconnect
+
+```bash
+python3 <this skill's directory>/scripts/keel_disconnect.py
+```
+
+No flag is required, or wanted. This script starts nothing, contacts no server and never touches a
+saved credential -- it stops the runtime on this machine and proves it is gone. Running it when
+nothing is running is a normal, safe thing to do.
+
+## Interpreting each disconnect outcome
+
+One line of JSON with an `outcome` key, one of the six values below. Reply in plain language --
+**never show the raw JSON** -- and end with the same one clause naming `environment` that every
+connect reply ends with.
+
+**`disconnected`** -- the runtime was running, was asked to stop, and has been seen to be gone.
+> Tell the user Keel has stopped and is no longer polling for work. Mention that their saved
+> credential is untouched, so saying "keel connect" later reconnects with no approval step.
+
+**`not_running`** -- nothing was running on this machine; nothing was done.
+> Tell them there was nothing to stop. This is not an error, and do not offer to start one unless
+> they ask.
+
+**`stale_pid_cleared`** -- no runtime was running, and a leftover file from one that had crashed or
+been killed was cleaned up.
+> Tell them exactly that: nothing was running, and the leftover was tidied away. Nothing else was
+> needed.
+
+**`did_not_stop`** -- the runtime would not stop and is still running.
+> Relay the `pid` and say it is stuck in something the operating system will not interrupt. Suggest
+> they look at that process themselves. **Do not offer to run "keel connect" now** -- the old
+> runtime is still polling, and starting a second one against the same machine is worse than the
+> problem.
+
+**`runtime_unavailable`** -- the runtime that is supposed to travel inside this skill is not there,
+and no `keel` command was found either.
+> Relay the `message` in your own words: the skill directory looks incomplete, so they should
+> reinstall or re-copy it in full. This is a broken installation, not something the user forgot.
+
+**`internal_error`** -- the runtime's `disconnect` did not answer the way it is supposed to. This is
+the only disconnect outcome that exits non-zero.
+> Share the `message`. If it says their runtime predates the disconnect command, tell them their
+> Keel installation needs updating. Otherwise suggest they check that installation directly.
+
+## What "keel connect" says right after a disconnect
+
+**After `disconnected`: nothing to worry about.** That outcome is reported only once the old process
+has been seen to be gone, so "keel connect" straight afterwards is safe and starts exactly one
+runtime. Say so if they ask.
+
+**After `did_not_stop`: do not offer a connect at all.** The old runtime is still running and still
+claiming work. A connect check now would truthfully report `already_connected`, which is unhelpful,
+and any other attempt would put two runtimes on one machine. The next step is the stuck process,
+not a new one.
+
+**If they say "keel connect" while a disconnect is still in flight**, they may briefly get a code
+for a second runtime while the first is on its way out. It resolves itself within a few seconds --
+the old one exits, the new one takes over. If it happens, say so plainly rather than starting
+another; do not run either script again to "fix" it.
+
 ## What this skill deliberately does not do
 
 - It does not run, validate, or interpret any inference job -- that is the connected runtime's job,
@@ -101,5 +177,8 @@ all. This is the only outcome that exits non-zero.
   skill. Do not reach for anything from one while handling a "keel connect" request.
 - It never waits on human approval itself (that is an out-of-band step the user takes in their
   browser) -- it only reports whether that wait has a code to show yet.
+- A disconnect stops a process; it does not forget a machine. It never clears a credential, never
+  cancels or fails a job in flight, and never reaches Keel Cloud. If the user wants Keel to forget
+  this machine, tell them this skill cannot do that.
 - It carries no Keel Cloud address of its own. Which Keel a user reaches is the runtime's answer,
   relayed; never construct, complete or correct a URL it hands you.

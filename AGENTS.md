@@ -5,7 +5,8 @@ Instructions for AI coding agents (and humans) working in this repository.
 ## What this is
 
 An agent skill (`SKILL.md` + `scripts/`) that checks whether a local Keel runtime is connected to
-Keel Cloud and starts it if not -- **carrying that runtime inside itself**. It only understands the
+Keel Cloud, starts it if not, and stops it again when asked -- **carrying that runtime inside
+itself**. It only understands the
 local runtime process; it has no relationship to Keel's discovery protocol, to MCP, or to any other
 Keel-branded skill beyond sharing a product name.
 
@@ -15,11 +16,15 @@ Read, in this order:
 
 1. keel-cloud `canon/designs/keel-skill-design.md` -- **the design of record**. Every rule here
    carries an invariant id (X-*, D-*, E-*) from its §9, and code comments cite those ids.
-2. `specs/003-bundled-runtime/spec.md` and `plan.md` -- the current shape of this repository.
-3. `specs/001-keel-connect-check/contracts/skill-script-output.md` -- **the one thing another
-   repository depends on** (`keel-cloud`'s `KeelConnectSkillJourneyTest`). A change to any JSON
-   shape it documents is a breaking change to that test, and a major version bump of this skill.
-   It is the only thing that can be one.
+   `canon/designs/keel-disconnect-design.md` is the design of record for the second script, and
+   the source of the S-* invariants.
+2. `specs/003-bundled-runtime/spec.md` and `specs/002-keel-disconnect/spec.md`, with their plans --
+   the current shape of this repository.
+3. `specs/001-keel-connect-check/contracts/skill-script-output.md` and
+   `specs/002-keel-disconnect/contracts/skill-disconnect-output.md` -- **the two things another
+   repository depends on** (`keel-cloud`'s `KeelConnectSkillJourneyTest`, keel-e2e-eval's harness
+   and `make down`). A change to any JSON shape either documents is a major version bump of this
+   skill. They are the only things that can be one.
 
 ## Running things
 
@@ -27,7 +32,8 @@ Read, in this order:
 make runtime                          # copy the runtime in; required before anything works
 make test                             # python3 -m unittest discover tests -v
 make test PYTHON=/usr/bin/python3     # the 3.9 floor, which every change must also pass
-python3 scripts/keel_connect_check.py # a manual run
+python3 scripts/keel_connect_check.py # a manual run: the door in
+python3 scripts/keel_disconnect.py    # a manual run: the door out
 ```
 
 No dependency install -- everything here is stdlib-only Python and Markdown.
@@ -48,6 +54,14 @@ No dependency install -- everything here is stdlib-only Python and Markdown.
   a `verification_uri`, and reports the `environment` the runtime handed it -- or nothing.
 - **No host name in a reply** (D5). `SKILL.md` carries exactly one deliberate exception, marked
   with an HTML comment saying so.
+- **`keel_disconnect.py` can never start anything** (S3). No `Popen`, no `"connect"` argv, no
+  launch path -- and a test asserts both the absence of the code and the absence of the fixtures'
+  launch marker. An ambiguous request resolves toward disconnect *because* of this; break it and
+  `SKILL.md`'s ambiguity rule becomes wrong.
+- **Neither script guesses a home.** `resolve_given_home` is the same rule in both files: pass
+  `--home` when given one, and otherwise let the runtime resolve the home it derives from the Keel
+  it resolved. A guessed `~/.keel` in one script and a derived home in the other means the door out
+  does not open on the door in.
 
 ## Scope discipline
 
