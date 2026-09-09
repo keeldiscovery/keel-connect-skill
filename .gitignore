@@ -6,3 +6,10 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .DS_Store
+
+# The runtime is copied in by `make runtime` from the one source of it in the world (the
+# keel-runtime repository) and is never committed here -- invariant D2, keel-cloud
+# `canon/designs/keel-skill-design.md` §3.1. `RUNTIME_VERSION`, which records *which* runtime this
+# skill carries, is committed; the package it names is not. Rooted, so the fake runtime fixtures
+# under tests/ are untouched.
+/keel_runtime/

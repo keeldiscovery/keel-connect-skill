@@ -1,31 +1,60 @@
 #!/usr/bin/env python3
-"""Checks whether a local `keel-runtime` (keel-cloud spec 020) is connected to Keel Cloud, and
-launches `keel connect` in the background if not.
+"""Checks whether a local keel-runtime is connected to Keel Cloud, and launches `keel connect` in
+the background if not.
 
-This is the entire implementation behind the `keel-connect` Claude Code skill (`../SKILL.md`).
-It never talks to Keel Cloud itself -- it only shells out to `keel-runtime status` (keel-cloud
-spec 021, a fast, offline, local check) and, when nothing is running, launches a detached
-`keel connect` and watches its log for the human-facing signal lines it already prints.
+This is the entire implementation behind the `keel-connect` skill (`../SKILL.md`). It never talks
+to Keel Cloud itself -- it shells out to the runtime's own `status` (a fast, offline, local check)
+and, when nothing is running, launches a detached `connect` and watches its log for the
+human-facing signal lines the runtime already prints.
 
-Standard library only (spec 001 FR-009) -- no dependency beyond what a bare `python3` provides,
-since Claude Code invokes this as a plain subprocess.
+Since spec `003-bundled-runtime` (keel-cloud `canon/designs/keel-skill-design.md`) **the runtime
+travels inside this skill**: `<skill root>/keel_runtime/`, put there by `make runtime`, resolved by
+`_runtime_location.py` and run with the interpreter that ran this file. Nothing is downloaded and
+nothing has to be installed. The one prerequisite is a Python 3.9, which is what the version gate
+below is for.
 
-Stable output contract: `../specs/001-keel-connect-check/contracts/skill-script-output.md`. Every
-outcome shape documented there is produced from exactly one place in this file (`_emit`), so the
-contract and the implementation cannot drift apart silently.
+Standard library only -- no dependency beyond what a bare `python3` provides, since a host invokes
+this as a plain subprocess.
+
+Stable output contract: `../specs/001-keel-connect-check/contracts/skill-script-output.md`, seven
+outcomes. Every shape documented there is produced from exactly one place in this file (`_emit`),
+so the contract and the implementation cannot drift apart silently (invariants X-1, X-2).
 """
-from __future__ import annotations
+import sys
+
+# ------------------------------------------------------------------------------- the version gate
+#
+# Invariant X-3: the first executable statement, above every import but `sys`, in syntax every
+# Python 3 parses -- no f-strings, no annotations, no walrus, no `pathlib`. A founder on 3.8 must
+# get a sentence, not a `SyntaxError`, so nothing below this block may use newer syntax either:
+# a module is compiled whole before its first line runs.
+#
+# The named platform is an **operating system**, which is neither a host nor an ecosystem, so this
+# is not an exception to invariant D4 or D5 (design §3.3).
+#
+# `python_missing` is not an outcome and cannot be: a script that cannot start cannot emit one.
+# With no `python3` at all the host gets *command not found*, so that answer lives in the
+# instruction layer -- `SKILL.md`'s *Running the check* and `README.md`.
+if sys.version_info < (3, 9):
+    _HOW = {
+        "darwin": "run `xcode-select --install`, or get it from https://www.python.org/downloads/",
+        "win32": "run `winget install Python.Python.3.12`, or install Python from the Microsoft Store",
+    }.get(sys.platform, "use your package manager, e.g. `sudo apt install python3`")
+    sys.stdout.write('{"outcome": "python_too_old", "found": "%d.%d", "required": "3.9", '
+                     '"environment": null, "message": "Keel needs Python 3.9 or newer; this is '
+                     'Python %d.%d. Install it once and say \\"keel connect\\" again: %s"}\n'
+                     % (sys.version_info[0], sys.version_info[1],
+                        sys.version_info[0], sys.version_info[1], _HOW))
+    raise SystemExit(0)
 
 import argparse
 import json
 import os
-import shutil
 import subprocess
-import sys
 import time
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Optional
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _runtime_location  # noqa: E402 -- must follow the gate and the path insert above
 
 DEFAULT_WAIT_SECONDS = 8.0
 STATUS_SUBPROCESS_TIMEOUT_SECONDS = 15.0
@@ -36,22 +65,22 @@ USER_CODE_PREFIX = "KEEL_USER_CODE="
 VERIFICATION_URI_PREFIX = "KEEL_VERIFICATION_URI="
 AGENT_SESSION_ID_PREFIX = "KEEL_AGENT_SESSION_ID="
 
+HOST_CLAUDE = "claude"
+HOST_COPILOT = "copilot"
+HOST_AUTO = "auto"
 
-@dataclass
-class RuntimeLocation:
-    """Where to invoke `status`/`connect` from -- either a `keel` executable found on `PATH`
-    (argv prefix `[<path-to-keel>]`, no fixed cwd needed) or a dev-mode checkout invoked as
-    `python3 -m keel_runtime` with that checkout as the subprocess's cwd (research.md §1).
-    """
-
-    argv_prefix: list[str]
-    cwd: Optional[Path]
-
-
-# --------------------------------------------------------------------------------- argument parsing
+# Which executor name each detected host asks the runtime for (design §5.3). `claude-code` is a
+# permanent accepted alias of the canonical `claude` (invariant C-12) and is the name today's
+# runtime knows, so it is the one sent: an alias promised never to be removed is safe to send, and
+# a canonical name the runtime does not yet accept is not. `copilot` is spec
+# `005-copilot-executor`'s and is sent as written.
+HOST_EXECUTORS = {HOST_CLAUDE: "claude-code", HOST_COPILOT: "copilot"}
 
 
-def build_parser() -> argparse.ArgumentParser:
+# -------------------------------------------------------------------------------- argument parsing
+
+
+def build_parser():
     parser = argparse.ArgumentParser(
         prog="keel_connect_check",
         description=(
@@ -64,13 +93,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--runtime-path",
         dest="runtime_path",
         default=None,
-        help="dev-mode keel-runtime checkout directory, used only when no 'keel' command is on "
-        "PATH (falls back to the KEEL_RUNTIME_PATH environment variable)",
+        help=argparse.SUPPRESS,  # X-4: a development override; no founder-facing text names it
+    )
+    parser.add_argument(
+        "--host",
+        dest="host",
+        choices=[HOST_CLAUDE, HOST_COPILOT, HOST_AUTO],
+        default=HOST_AUTO,
+        help="which agent host is running this check; 'auto' reads the environment it was "
+        "launched into and says nothing when that is silent or contradictory",
     )
     parser.add_argument("--base-url", dest="base_url", default=None,
-                         help="passed through to 'keel connect' if a launch is needed")
+                        help="passed through to 'keel connect' if a launch is needed")
     parser.add_argument("--executor", dest="executor", default=None,
-                         help="passed through to 'keel connect' if a launch is needed")
+                        help="passed through to 'keel connect' if a launch is needed; when given, "
+                        "it wins over --host outright")
     parser.add_argument(
         "--credential-backend",
         dest="credential_backend",
@@ -88,75 +125,111 @@ def build_parser() -> argparse.ArgumentParser:
         "--home",
         dest="home",
         default=None,
-        help="overrides KEEL_HOME for both the status check and any launch (falls back to the "
-        "KEEL_HOME environment variable, then ~/.keel)",
+        help="overrides KEEL_HOME for both the status check and any launch. When neither is "
+        "given, the runtime derives its own home from the Keel it resolves and reports it back "
+        "-- this script does not guess one.",
     )
     parser.add_argument(
         "--wait-seconds",
         dest="wait_seconds",
         type=float,
         default=DEFAULT_WAIT_SECONDS,
-        help=f"how long to watch a launched connect's log for a signal before reporting "
-        f"authorization_pending_timeout (default: {DEFAULT_WAIT_SECONDS})",
+        help="how long to watch a launched connect's log for a signal before reporting "
+        "authorization_pending_timeout (default: %s)" % DEFAULT_WAIT_SECONDS,
     )
     return parser
 
 
-def _resolve_home(args: argparse.Namespace) -> Path:
-    """Same flag > KEEL_HOME env > ~/.keel precedence keel-runtime's own config.py uses --
-    resolved here (rather than left to each subprocess) so this script's own log-file placement
-    and every subprocess invocation agree on the same directory regardless of ambient environment
-    differences (contracts/skill-script-output.md's --home documentation)."""
+def resolve_given_home(args, environ=None):
+    """The home this script was *given*, or `None` (design §6.3).
+
+    `None` means "let the runtime decide": since spec `004-shipped-runtime` the runtime derives
+    `~/.keel/<host-slug>/` from the Keel it resolved, so a credential issued by one Keel is never
+    presented to another. This script stops guessing a default of its own -- it passes `--home`
+    only when it was given one, and otherwise reports back the `home` that `status` named, which
+    is also where the launch log goes.
+    """
+    env = os.environ if environ is None else environ
     if args.home:
-        return Path(args.home).expanduser()
-    env_home = os.environ.get("KEEL_HOME")
+        return os.path.expanduser(args.home)
+    env_home = env.get("KEEL_HOME")
     if env_home:
-        return Path(env_home).expanduser()
-    return Path.home() / ".keel"
-
-
-# ------------------------------------------------------------------------------- runtime resolution
-
-
-def resolve_runtime(args: argparse.Namespace) -> Optional[RuntimeLocation]:
-    """spec FR-002 / research.md §1: a `keel` command on PATH wins whenever it exists (the
-    eventual real-world, packaged case); only then fall back to --runtime-path/KEEL_RUNTIME_PATH,
-    and only if that directory actually looks like a keel_runtime checkout."""
-    keel_on_path = shutil.which("keel")
-    if keel_on_path:
-        return RuntimeLocation(argv_prefix=[keel_on_path], cwd=None)
-
-    runtime_path = args.runtime_path or os.environ.get("KEEL_RUNTIME_PATH")
-    if runtime_path:
-        candidate = Path(runtime_path).expanduser()
-        if (candidate / "keel_runtime" / "__main__.py").is_file():
-            # sys.executable, not a bare "python3" looked up on PATH: this script is already
-            # running under some Python interpreter, and re-using it is strictly more reliable
-            # than assuming "python3" resolves to a compatible one (or resolves at all) in
-            # whatever PATH the caller (Claude Code, a test harness) provides -- functionally
-            # the same as the documented "invoked as python3 -m keel_runtime" shape.
-            return RuntimeLocation(argv_prefix=[sys.executable, "-m", "keel_runtime"], cwd=candidate)
-
+        return os.path.expanduser(env_home)
     return None
 
 
-# ------------------------------------------------------------------------------------- status check
+# --------------------------------------------------------------------------------- host detection
 
 
-def run_status(location: RuntimeLocation, home: Path) -> Optional[dict]:
-    """Invokes `<location> status --home <home>` and parses its documented spec-021 contract.
-    Returns None on any failure to honor that contract -- a crash, non-zero exit, output that
-    isn't exactly one JSON line, or JSON missing the required `running` key -- so the caller can
-    report `internal_error` instead of letting an exception escape (spec FR-008)."""
-    argv = location.argv_prefix + ["status", "--home", str(home)]
+def detect_host(environ=None):
+    """Design §5.3 step 2: the environment this process was launched into, or `None`.
+
+    D5 grep exemption, explicitly: this table reads environment *variable names*, which is not a
+    host name in a founder-facing reply. No outcome shape changes and no message mentions a host
+    -- which executor was chosen is visible in the runtime's own log and in `keel status`.
+
+    **Two different answers means no answer.** That is not hypothetical: the environment that
+    taught this table those names was one host's CLI running *inside* the other, carrying both
+    markers at once. `COPILOT_AGENT_SESSION_ID` leaks arbitrarily deep down a process tree -- it
+    means "somewhere in my ancestry", never "my parent".
+    """
+    env = os.environ if environ is None else environ
+    answers = set()
+
+    if (env.get("COPILOT_AGENT_SESSION_ID") or "").strip():
+        answers.add(HOST_COPILOT)
+    if env.get("COPILOT_CLI") == "1":
+        answers.add(HOST_COPILOT)
+    if env.get("CLAUDECODE") == "1":
+        answers.add(HOST_CLAUDE)
+
+    ai_agent = (env.get("AI_AGENT") or "").strip()
+    if ai_agent.startswith("github_copilot"):
+        answers.add(HOST_COPILOT)
+    if ai_agent.startswith("claude-code"):
+        answers.add(HOST_CLAUDE)
+
+    if len(answers) == 1:
+        return answers.pop()
+    return None
+
+
+def executor_for(args, environ=None):
+    """The `--executor` value to pass to `connect`, or `None` to pass none at all.
+
+    Explicit beats detected: a founder who named an executor gets it, always. `--host claude` /
+    `--host copilot` name the host outright; `auto` runs the detection table, which answers `None`
+    when the environment is silent or contradictory -- and `None` means this script says nothing
+    and leaves the runtime's own chain (`KEEL_EXECUTOR`, config, default) untouched.
+
+    Never consulted on a `status` call: `--executor` is passed on `connect` only (design §5.3).
+    """
+    if args.executor:
+        return args.executor
+    host = args.host
+    if host == HOST_AUTO:
+        host = detect_host(environ)
+    if host is None:
+        return None
+    return HOST_EXECUTORS.get(host)
+
+
+# ------------------------------------------------------------------------------------ status check
+
+
+def run_status(location, home):
+    """Invokes `<runtime> status [--home <home>]` and parses its documented contract (keel-cloud
+    `specs/021-keel-runtime-status/contracts/status-cli-output.md`). Returns None on any failure to
+    honour it -- a crash, non-zero exit, output that isn't exactly one JSON line, or JSON missing
+    the required `running` key -- so the caller reports `internal_error` rather than letting an
+    exception escape.
+    """
+    argv = ["status"]
+    if home:
+        argv += ["--home", str(home)]
     try:
-        completed = subprocess.run(
-            argv,
-            cwd=str(location.cwd) if location.cwd else None,
-            capture_output=True,
-            text=True,
-            timeout=STATUS_SUBPROCESS_TIMEOUT_SECONDS,
-        )
+        completed = _runtime_location.run_capturing(
+            location, argv, timeout=STATUS_SUBPROCESS_TIMEOUT_SECONDS)
     except (OSError, subprocess.TimeoutExpired):
         return None
 
@@ -178,22 +251,32 @@ def run_status(location: RuntimeLocation, home: Path) -> Optional[dict]:
     return data
 
 
-# --------------------------------------------------------------------------------- launching connect
+# ------------------------------------------------------------------------------ launching connect
 
 
-def launch_connect(location: RuntimeLocation, home: Path, args: argparse.Namespace) -> tuple[int, Path]:
-    """Launches `keel connect` detached (research.md §2) with its combined output redirected to
-    a log file under `home` (spec FR-005). Returns the launched process's pid and the log path.
-    Raises OSError if the subprocess cannot even be started (surfaced by the caller as
-    `internal_error`, spec FR-008)."""
-    home.mkdir(parents=True, exist_ok=True)
-    log_path = home / LAUNCH_LOG_FILENAME
+def launch_connect(location, log_home, args, executor):
+    """Launches `connect` detached, with its combined output redirected to a log file under the
+    runtime's home. Returns the launched process's pid and the log path.
 
-    argv = location.argv_prefix + ["connect", "--home", str(home)]
+    `--home` is passed to the child only when this script was *given* one (§6.3); `log_home` is
+    where the log goes, which is the home `status` just named. Raises OSError if the subprocess
+    cannot even be started (surfaced by the caller as `internal_error`).
+
+    Nothing is written outside the runtime's home, and no `PATH` or shell profile is ever touched
+    (invariant X-6).
+    """
+    if not os.path.isdir(log_home):
+        os.makedirs(log_home)
+    log_path = os.path.join(log_home, LAUNCH_LOG_FILENAME)
+
+    argv = ["connect"]
+    given_home = resolve_given_home(args)
+    if given_home:
+        argv += ["--home", given_home]
     if args.base_url:
         argv += ["--base-url", args.base_url]
-    if args.executor:
-        argv += ["--executor", args.executor]
+    if executor:
+        argv += ["--executor", executor]
     if args.credential_backend:
         argv += ["--credential-backend", args.credential_backend]
     if args.no_browser:
@@ -205,37 +288,44 @@ def launch_connect(location: RuntimeLocation, home: Path, args: argparse.Namespa
     else:  # pragma: no cover -- exercised on Windows only
         popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
 
-    with open(log_path, "w", encoding="utf-8") as log_handle:
+    log_handle = open(log_path, "w")
+    try:
         process = subprocess.Popen(
-            argv,
-            cwd=str(location.cwd) if location.cwd else None,
+            location.argv_prefix + argv,
             stdout=log_handle,
             stderr=subprocess.STDOUT,
-            **popen_kwargs,
+            env=location.child_env(),
+            cwd=location.child_cwd(),
+            **popen_kwargs
         )
-    # The child has already duplicated the fd -- closing our own handle above (the `with` block
-    # exiting) does not stop it from writing.
+    finally:
+        # The child has already duplicated the fd -- closing ours does not stop it writing.
+        log_handle.close()
     return process.pid, log_path
 
 
-def _extract_value(content: str, prefix: str) -> Optional[str]:
+def _extract_value(content, prefix):
     for line in content.splitlines():
         if line.startswith(prefix):
             return line[len(prefix):]
     return None
 
 
-def await_launch_signal(log_path: Path, wait_seconds: float) -> dict:
-    """spec FR-006 / research.md §3-4: poll the launched process's log for a bounded time for
-    either signal keel-runtime's own cli.py/auth.py already print. Returns an outcome dict
-    without `pid`/`log_file` -- the caller fills those in, since this function only knows about
-    the log."""
+def await_launch_signal(log_path, wait_seconds):
+    """Poll the launched process's log for a bounded time for either signal the runtime's own
+    `cli.py`/`auth.py` already print. Returns an outcome dict without `pid`/`log_file`/
+    `environment` -- the caller fills those in, since this function only knows about the log.
+    """
     deadline = time.monotonic() + wait_seconds
     while True:
         content = ""
-        if log_path.exists():
+        if os.path.exists(log_path):
             try:
-                content = log_path.read_text(encoding="utf-8", errors="replace")
+                handle = open(log_path, "r", errors="replace")
+                try:
+                    content = handle.read()
+                finally:
+                    handle.close()
             except OSError:
                 content = ""
 
@@ -265,67 +355,89 @@ def await_launch_signal(log_path: Path, wait_seconds: float) -> dict:
         time.sleep(LAUNCH_SIGNAL_POLL_INTERVAL_SECONDS)
 
 
-# ------------------------------------------------------------------------------------------- output
+# ------------------------------------------------------------------------------------------ output
 
 
-def _emit(payload: dict, exit_code: int) -> int:
-    print(json.dumps(payload))
+def _emit(payload, exit_code):
+    """The one place every one of the seven shapes is printed (X-1): exactly one line of JSON on
+    stdout, always, and exit 0 for every outcome except `internal_error`."""
+    sys.stdout.write(json.dumps(payload) + "\n")
     return exit_code
 
 
-def _runtime_unavailable() -> int:
+def _runtime_unavailable():
+    """No checkout, no bundled runtime, no `keel` on PATH.
+
+    The message names neither `--runtime-path` nor `KEEL_RUNTIME_PATH` (X-4: they are development
+    overrides) and no longer names `pip install keel-runtime`: nothing is installed any more, so a
+    skill with no `keel_runtime/` beside it is a skill that was copied wrong, not a founder who
+    skipped a step. `environment` is null because no runtime answered (guarantee 4).
+    """
     return _emit({
         "outcome": "runtime_unavailable",
         "message": (
-            "no 'keel' command found on PATH and no usable --runtime-path/KEEL_RUNTIME_PATH "
-            "directory (expected <path>/keel_runtime/__main__.py inside it). Install "
-            "keel-runtime once it is packaged (pip install keel-runtime), or point "
-            "--runtime-path/KEEL_RUNTIME_PATH at a keel-cloud checkout's keel-runtime/ "
-            "directory for development."
+            "this skill did not find the Keel runtime that is supposed to travel inside it "
+            "(a keel_runtime/ package beside the skill's own scripts/ directory), and no keel "
+            "command was found either. The skill directory looks incomplete -- reinstall it, or "
+            "copy it again in full."
         ),
+        "environment": None,
     }, 0)
 
 
-def _internal_error(message: str) -> int:
-    return _emit({"outcome": "internal_error", "message": message}, 1)
+def _internal_error(message, environment=None):
+    return _emit({"outcome": "internal_error", "message": message,
+                  "environment": environment}, 1)
 
 
-# --------------------------------------------------------------------------------------------- main
+# -------------------------------------------------------------------------------------------- main
 
 
-def main(argv=None) -> int:
+def main(argv=None):
     args = build_parser().parse_args(argv)
-    home = _resolve_home(args)
 
-    location = resolve_runtime(args)
+    location = _runtime_location.resolve_runtime(runtime_path=args.runtime_path)
     if location is None:
         return _runtime_unavailable()
 
-    status_result = run_status(location, home)
+    given_home = resolve_given_home(args)
+    status_result = run_status(location, given_home)
     if status_result is None:
+        # Raised before `status` returned, so no runtime named a Keel: `environment` is null.
         return _internal_error(
-            "'keel-runtime status' did not return a well-formed answer (see "
-            "keel-cloud specs/021-keel-runtime-status/contracts/status-cli-output.md) -- it "
-            "may have crashed, printed something other than one JSON line, or omitted the "
-            "required 'running' key."
+            "the Keel runtime's 'status' did not return a well-formed answer (see keel-cloud "
+            "specs/021-keel-runtime-status/contracts/status-cli-output.md) -- it may have "
+            "crashed, printed something other than one JSON line, or omitted the required "
+            "'running' key."
         )
 
+    # Which Keel this is, straight from the runtime. The skill carries no base URL and no
+    # environment table of its own, and says nothing rather than guessing (invariant X-5).
+    environment = status_result.get("environment")
+    # The home the runtime *reported*, which is where its log lives. The `~/.keel` fallback covers
+    # only a runtime older than spec `004-shipped-runtime`, which does not report one.
+    log_home = given_home or status_result.get("home") or os.path.join(
+        os.path.expanduser("~"), ".keel")
+
     if status_result.get("running") is True:
+        # `base_url` is gone from this shape and `environment` replaces it: one key for *which
+        # Keel*, never two (design §7).
         return _emit({
             "outcome": "already_connected",
             "agent_session_id": status_result.get("agent_session_id"),
-            "base_url": status_result.get("base_url"),
             "last_heartbeat_at": status_result.get("last_heartbeat_at"),
+            "environment": environment,
         }, 0)
 
     try:
-        pid, log_path = launch_connect(location, home, args)
+        pid, log_path = launch_connect(location, log_home, args, executor_for(args))
     except OSError as exc:
-        return _internal_error(f"failed to launch 'keel connect': {exc}")
+        return _internal_error("failed to launch 'keel connect': %s" % exc, environment)
 
     outcome = await_launch_signal(log_path, args.wait_seconds)
     outcome["pid"] = pid
-    outcome["log_file"] = str(log_path)
+    outcome["log_file"] = log_path
+    outcome["environment"] = environment
     return _emit(outcome, 0)
 
 
