@@ -311,6 +311,29 @@ def _extract_value(content, prefix):
     return None
 
 
+PENDING_TIMEOUT_MESSAGE = (
+    "keel connect did not report an authorization code or a connection within "
+    "the wait window; it may still be starting -- check the log file or try "
+    "again shortly."
+)
+
+
+def _read_log(log_path):
+    """The launched process's log, or `""` if it is not there yet or not readable. Shared by
+    `await_launch_signal` (a launch this call just made) and `_resume_pending_authorization` (a
+    launch an earlier call made, or the runtime itself before any script ran)."""
+    if not os.path.exists(log_path):
+        return ""
+    try:
+        handle = open(log_path, "r", errors="replace")
+        try:
+            return handle.read()
+        finally:
+            handle.close()
+    except OSError:
+        return ""
+
+
 def await_launch_signal(log_path, wait_seconds):
     """Poll the launched process's log for a bounded time for either signal the runtime's own
     `cli.py`/`auth.py` already print. Returns an outcome dict without `pid`/`log_file`/
@@ -318,16 +341,7 @@ def await_launch_signal(log_path, wait_seconds):
     """
     deadline = time.monotonic() + wait_seconds
     while True:
-        content = ""
-        if os.path.exists(log_path):
-            try:
-                handle = open(log_path, "r", errors="replace")
-                try:
-                    content = handle.read()
-                finally:
-                    handle.close()
-            except OSError:
-                content = ""
+        content = _read_log(log_path)
 
         user_code = _extract_value(content, USER_CODE_PREFIX)
         verification_uri = _extract_value(content, VERIFICATION_URI_PREFIX)
@@ -345,14 +359,55 @@ def await_launch_signal(log_path, wait_seconds):
         if time.monotonic() >= deadline:
             return {
                 "outcome": "authorization_pending_timeout",
-                "message": (
-                    "keel connect did not report an authorization code or a connection within "
-                    "the wait window; it may still be starting -- check the log file or try "
-                    "again shortly."
-                ),
+                "message": PENDING_TIMEOUT_MESSAGE,
             }
 
         time.sleep(LAUNCH_SIGNAL_POLL_INTERVAL_SECONDS)
+
+
+def _resume_pending_authorization(log_home, status_result, environment):
+    """`status` said `running: true` and `connected: false` (keel-runtime commit `bfc0ad6`,
+    status contract guarantee 4): a `connect` this founder already started is alive and
+    pid-checkable but has not completed device approval -- either still waiting on the code it
+    already printed, or (no code ever printed) reusing a stored credential that has not finished
+    reconnecting yet. Neither is a fresh event, and nothing here launches a second `connect` against
+    a runtime that is already running (guarantee 5): the log the earlier launch already wrote
+    (this script's own from a prior call, or the runtime's own if a human started it directly) is
+    re-read for the same two signals `await_launch_signal` looks for fresh off a launch.
+
+    A founder who says "keel connect" again while approval is still pending must see the code
+    again, not `already_connected` -- `already_connected` is reserved for `connected: true`. The
+    contract (`specs/001-keel-connect-check/contracts/skill-script-output.md`) closes over exactly
+    seven shapes and says a key is never added to one without the contract changing first, so this
+    adds none: no `resumed` field marks a repeat, the reply is the identical `authorization_started`
+    or `authorization_pending_timeout` shape a fresh launch would have produced. `pid` is `status`'s
+    own answer -- the process this call did not launch -- not a launch this call never made.
+    """
+    log_path = os.path.join(log_home, LAUNCH_LOG_FILENAME)
+    content = _read_log(log_path)
+    pid = status_result.get("pid")
+
+    user_code = _extract_value(content, USER_CODE_PREFIX)
+    verification_uri = _extract_value(content, VERIFICATION_URI_PREFIX)
+    if user_code and verification_uri:
+        return _emit({
+            "outcome": "authorization_started",
+            "user_code": user_code,
+            "verification_uri": verification_uri,
+            "pid": pid,
+            "log_file": log_path,
+            "environment": environment,
+        }, 0)
+
+    # No code in the log: a stored-credential reconnect in progress (or a launch too new to have
+    # written anything yet), not a device approval waiting on this founder.
+    return _emit({
+        "outcome": "authorization_pending_timeout",
+        "message": PENDING_TIMEOUT_MESSAGE,
+        "pid": pid,
+        "log_file": log_path,
+        "environment": environment,
+    }, 0)
 
 
 # ------------------------------------------------------------------------------------------ output
@@ -420,14 +475,20 @@ def main(argv=None):
         os.path.expanduser("~"), ".keel")
 
     if status_result.get("running") is True:
-        # `base_url` is gone from this shape and `environment` replaces it: one key for *which
-        # Keel*, never two (design §7).
-        return _emit({
-            "outcome": "already_connected",
-            "agent_session_id": status_result.get("agent_session_id"),
-            "last_heartbeat_at": status_result.get("last_heartbeat_at"),
-            "environment": environment,
-        }, 0)
+        if status_result.get("connected") is True:
+            # `base_url` is gone from this shape and `environment` replaces it: one key for
+            # *which Keel*, never two (design §7).
+            return _emit({
+                "outcome": "already_connected",
+                "agent_session_id": status_result.get("agent_session_id"),
+                "last_heartbeat_at": status_result.get("last_heartbeat_at"),
+                "environment": environment,
+            }, 0)
+        # Running, but not yet connected: a `connect` is alive and pid-checkable but still
+        # waiting on device approval (or reconnecting a stored credential). Not a fresh event,
+        # so nothing is launched a second time -- the founder is told the same thing a first
+        # "keel connect" would have said (status contract guarantee 4).
+        return _resume_pending_authorization(log_home, status_result, environment)
 
     try:
         pid, log_path = launch_connect(location, log_home, args, executor_for(args))

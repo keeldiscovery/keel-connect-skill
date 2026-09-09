@@ -11,6 +11,15 @@ is new, and `environment` is now a key on every shape. Design of record: keel-cl
 `canon/designs/keel-skill-design.md` §7. **A change to this file is a major version bump of the
 skill, and the only thing that can be one.**
 
+**Amended (bugfix, no version bump)**: `already_connected` was being said for `running: true`
+alone, before keel-runtime commit `bfc0ad6` made that no longer imply approval was done. This
+amendment corrects the precondition this file already documented for that shape (`status`
+reporting the runtime running) to what the shape's own name always meant -- `connected: true` too
+-- and widens `authorization_started` and `authorization_pending_timeout` to also be reached by
+re-reading an existing launch log rather than only by a fresh launch. **No shape gains, loses, or
+renames a key**; the seven shapes and every key on them are unchanged, which is why this is not the
+major version bump the rule above describes.
+
 This script is itself a caller of the runtime's own stable contract (keel-cloud
 `specs/021-keel-runtime-status/contracts/status-cli-output.md`) -- this file documents a distinct,
 one-level-higher contract, not a restatement of that one.
@@ -106,8 +115,16 @@ The `message` names neither `--runtime-path` nor `KEEL_RUNTIME_PATH` (they are d
 overrides) and no longer offers `pip install keel-runtime`: nothing is installed any more, so a
 skill with no runtime beside it is a skill that was copied wrong, not a founder who skipped a step.
 
-**`already_connected`** -- `status` (checked first, always) reported `running: true`. No process
-was launched.
+**`already_connected`** -- `status` (checked first, always) reported `running: true` **and
+`connected: true`**. No process was launched.
+
+keel-runtime commit `bfc0ad6` (keel-cloud `specs/021-keel-runtime-status/contracts/
+status-cli-output.md` guarantee 4) means `running: true` no longer implies approval is done: a
+`connect` writes its heartbeat, and so is alive and pid-checkable, from the moment it starts, well
+before a human has approved the device. `running: true` with `connected: false` is **not**
+`already_connected` -- see `authorization_started` and `authorization_pending_timeout` below, both
+of which this script also reaches without launching anything, by re-reading a launch log already on
+disk.
 
 ```json
 {
@@ -121,8 +138,13 @@ was launched.
 **This shape lost `base_url` and gained `environment`** -- one key for *which Keel*, never two.
 That is the only change to a shape that already existed.
 
-**`authorization_started`** -- `status` reported not running; `connect` was launched detached and,
-within the bounded wait, printed both `KEEL_USER_CODE=` and `KEEL_VERIFICATION_URI=` to its log.
+**`authorization_started`** -- either `status` reported not running and `connect` was launched
+detached and, within the bounded wait, printed both `KEEL_USER_CODE=` and `KEEL_VERIFICATION_URI=`
+to its log; **or** `status` reported `running: true` and `connected: false` (approval still
+pending) and those same two lines were already sitting in the launch log an earlier call (or the
+runtime itself) wrote -- nothing is launched a second time. Both reach the identical shape below;
+a caller cannot tell from the JSON alone which one happened, and does not need to -- the code and
+URL are the same code and URL either way.
 
 ```json
 {
@@ -152,10 +174,13 @@ credential was reused, so no human approval step was needed.
 }
 ```
 
-**`authorization_pending_timeout`** -- `status` reported not running; `connect` was launched
-detached, but neither signal above appeared in its log within `--wait-seconds`. The process is
-still running in the background (it is not killed and not considered failed) -- this outcome means
-the script stopped waiting, not that anything went wrong.
+**`authorization_pending_timeout`** -- either `status` reported not running, `connect` was
+launched detached, and neither signal above appeared in its log within `--wait-seconds`; **or**
+`status` reported `running: true` and `connected: false` and the launch log on disk (an earlier
+call's, or absent entirely) has no `KEEL_USER_CODE=` in it -- a stored-credential reconnect in
+progress, not a device approval waiting on this founder. Either way the process is still running in
+the background (it is not killed and not considered failed) -- this outcome means the script has
+nothing new to report, not that anything went wrong.
 
 ```json
 {

@@ -497,6 +497,74 @@ class OutcomeTestCase(SkillHarness):
         self.assertIn("--home", self.connect_argv())
 
 
+# ============================================================ a repeat call while approval is pending
+
+
+class PendingApprovalTestCase(SkillHarness):
+    """keel-runtime commit `bfc0ad6` (status contract guarantee 4): the heartbeat exists in state
+    `awaiting_approval` from the moment `connect` starts, so `status` can answer `running: true`
+    while `connected` is still `false`. A founder who says "keel connect" again while their
+    approval is still pending must see the code again -- `already_connected` is reserved for
+    `connected: true`, never said just because a process is alive.
+    """
+
+    def write_log(self, content, home=None):
+        home_dir = Path(home or self.home)
+        home_dir.mkdir(parents=True, exist_ok=True)
+        log_path = home_dir / keel_connect_check.LAUNCH_LOG_FILENAME
+        log_path.write_text(content, encoding="utf-8")
+        return log_path
+
+    def run_awaiting_approval(self, args=()):
+        return self.run_script(
+            args=["--home", self.home, "--runtime-path", FAKE_CHECKOUT] + list(args),
+            env=clean_env(FAKE_KEEL_SCENARIO="awaiting_approval"))
+
+    def test_authorization_started_again_when_a_code_is_already_on_disk(self):
+        """The same code and URL an earlier call (or the runtime itself) already wrote are
+        relayed again, in the identical shape -- no `resumed` key, because the contract closes
+        over exactly seven shapes and none may gain a key without the contract changing first."""
+        log_path = self.write_log(
+            "KEEL_USER_CODE=OLD-CODE\nKEEL_VERIFICATION_URI=http://fake-cloud.test/verify\n")
+        result = self.run_awaiting_approval()
+        self.assertEqual(result["outcome"], "authorization_started")
+        self.assertEqual(result["user_code"], "OLD-CODE")
+        self.assertEqual(result["verification_uri"], "http://fake-cloud.test/verify")
+        self.assertEqual(result["pid"], 424242, "status's own pid -- no launch happened")
+        self.assertEqual(Path(result["log_file"]), log_path)
+        self.assertEqual(result["environment"], "fake-cloud.test")
+        self.assertIsNone(self.connect_argv(), "no second `connect` is launched")
+        self.assertEqual(
+            set(result), {"outcome", "user_code", "verification_uri", "pid", "log_file",
+                          "environment"},
+            "the identical authorization_started shape -- no new key for a repeat")
+
+    def test_pending_timeout_when_the_log_has_no_code_yet(self):
+        """No code in the log: a stored-credential reconnect in progress, not a device approval
+        waiting on this founder."""
+        self.write_log("some unrelated line\n")
+        result = self.run_awaiting_approval()
+        self.assertEqual(result["outcome"], "authorization_pending_timeout")
+        self.assertTrue(result["message"])
+        self.assertEqual(result["pid"], 424242)
+        self.assertEqual(result["environment"], "fake-cloud.test")
+        self.assertIsNone(self.connect_argv())
+
+    def test_pending_timeout_when_there_is_no_log_at_all(self):
+        result = self.run_awaiting_approval()
+        self.assertEqual(result["outcome"], "authorization_pending_timeout")
+        self.assertEqual(result["pid"], 424242)
+        self.assertIsNone(self.connect_argv())
+
+    def test_already_connected_is_never_said_for_connected_false(self):
+        """The fault this fixes: `running: true` alone used to be read as `already_connected`.
+        It must not be, whether or not a code is on disk."""
+        self.write_log(
+            "KEEL_USER_CODE=OLD-CODE\nKEEL_VERIFICATION_URI=http://fake-cloud.test/verify\n")
+        result = self.run_awaiting_approval()
+        self.assertNotEqual(result["outcome"], "already_connected")
+
+
 # ============================================================================= the host (§5.3, D5)
 
 

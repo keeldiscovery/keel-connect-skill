@@ -67,7 +67,8 @@ Every outcome also carries `environment`: which Keel this is. **End your reply w
 naming it** -- "on Keel Cloud", or "on `localhost:18081`" written exactly as given. When it is
 `null` no runtime answered, so say nothing about which Keel; do not guess one.
 
-**`already_connected`** -- a runtime is already running and connected. Nothing was started.
+**`already_connected`** -- a runtime is already running **and has completed device approval**.
+Nothing was started.
 > Tell the user Keel is already connected. You may mention the `agent_session_id` as context, but
 > it is rarely something a human needs to see.
 
@@ -76,12 +77,15 @@ immediately using a saved credential from a previous session -- no approval was 
 > Tell the user Keel just reconnected on its own using a saved credential; no action needed from
 > them.
 
-**`authorization_started`** -- nothing was running, the runtime was started, and it is now waiting
-for the user to approve this device.
+**`authorization_started`** -- the runtime is waiting for the user to approve this device: either it
+was just started, or it was already running and waiting when this check ran (a repeat "keel
+connect" while approval is still pending gets this same outcome again, with the same code).
 > Relay the `user_code` and `verification_uri` **verbatim** -- do not shorten, rewrite or rebuild
 > the URL; the Keel that issued it is the only thing that knows where its own approval screen is.
-> Tell them to open it and approve, and that they can just say "keel connect" again in a little
-> while to confirm it went through.
+> If this is a repeat check and the user has seen this code before, say so plainly -- something
+> like "still waiting for you to approve -- here is the code again" -- rather than presenting it as
+> if it were new. Otherwise tell them to open it and approve, and that they can just say "keel
+> connect" again in a little while to confirm it went through.
 
 **`authorization_pending_timeout`** -- the runtime was started, but it had not printed an
 authorization code (or connected) by the time the check stopped waiting. The process is still

@@ -115,6 +115,19 @@ def _run_status(scenario: str, home_flag) -> int:
             "last_heartbeat_at": "2026-01-01T00:00:00.000Z",
             "connected": True,
         }
+    elif scenario == "awaiting_approval":
+        # keel-runtime commit bfc0ad6: the heartbeat exists from the moment `connect` starts, in
+        # state `awaiting_approval` -- alive and pid-checkable, but `connected` is `false` and
+        # `agent_session_id` is `null` until a human approves the device (status contract
+        # guarantee 4). The pid named here is fixed and does not correspond to a real process --
+        # these tests never launch a `connect` for this scenario, so nothing checks it is alive.
+        result = {
+            "running": True,
+            "pid": 424242,
+            "agent_session_id": None,
+            "last_heartbeat_at": "2026-01-01T00:00:00.000Z",
+            "connected": False,
+        }
     else:
         result = {"running": False}
 
