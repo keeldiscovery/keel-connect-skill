@@ -32,6 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     connect.add_argument("--executor")
     connect.add_argument("--credential-backend")
     connect.add_argument("--no-browser", action="store_true")
+    connect.add_argument("--launcher-version")
 
     return parser
 

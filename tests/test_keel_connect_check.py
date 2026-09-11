@@ -408,6 +408,68 @@ class OutcomeTestCase(SkillHarness):
         self.assertIsNone(self.connect_argv(),
                           "already_connected must not launch a redundant connect")
 
+    # ------------------------------------------------------ upgrade in place (spec 005)
+
+    def _bundle_version(self):
+        return (REPO_ROOT / "VERSION").read_text(encoding="utf-8").strip()
+
+    def test_an_older_idle_runtime_is_replaced(self):
+        """The bundle is newer than the launcher of the running runtime, which is idle: disconnect,
+        then connect, and the outcome says both -- `upgraded`, `then: connected`."""
+        result = self.run_against_fake("older_then_instant_connect", args=["--wait-seconds", "5"],
+                                       FAKE_KEEL_LAUNCHER_VERSION="1.0.0", FAKE_KEEL_BUSY="0")
+        self.assertEqual(result["outcome"], "upgraded")
+        self.assertEqual(result["then"], "connected")
+        self.assertEqual(result["previous_version"], "1.0.0")
+        self.assertEqual(result["bundle_version"], self._bundle_version())
+        self.assertEqual(result["agent_session_id"], "instant-agent-session-id")
+        self.assertEqual(result["environment"], "fake-cloud.test")
+        self.track_pid(result["pid"])
+        self.assertTrue((self.home / "disconnect-argv.json").exists(),
+                        "the older runtime must be stopped through its own disconnect first")
+        argv = self.connect_argv()
+        self.assertIsNotNone(argv, "the new runtime must be launched after the stop")
+        self.assertIn("--launcher-version", argv)
+        self.assertEqual(argv[argv.index("--launcher-version") + 1], self._bundle_version())
+
+    def test_a_runtime_that_could_not_say_who_launched_it_counts_as_older(self):
+        result = self.run_against_fake("older_then_instant_connect", args=["--wait-seconds", "5"])
+        self.assertEqual(result["outcome"], "upgraded")
+        self.assertIsNone(result["previous_version"])
+        self.track_pid(result["pid"])
+
+    def test_an_older_busy_runtime_is_left_to_finish(self):
+        result = self.run_against_fake("older_then_instant_connect",
+                                       FAKE_KEEL_LAUNCHER_VERSION="1.0.0", FAKE_KEEL_BUSY="1")
+        self.assertEqual(result["outcome"], "upgrade_waiting")
+        self.assertEqual(result["running_version"], "1.0.0")
+        self.assertEqual(result["bundle_version"], self._bundle_version())
+        self.assertFalse((self.home / "disconnect-argv.json").exists(),
+                         "a busy runtime is never stopped")
+        self.assertIsNone(self.connect_argv(), "and nothing is launched beside it")
+
+    def test_a_newer_running_runtime_is_kept(self):
+        """Spec Kit installs the tree per project, so an older project's "keel connect" must never
+        downgrade the runtime a newer project started."""
+        result = self.run_against_fake("already_connected", FAKE_KEEL_LAUNCHER_VERSION="99.0.0")
+        self.assertEqual(result["outcome"], "already_connected")
+        self.assertEqual(result["launcher_version"], "99.0.0")
+        self.assertFalse((self.home / "disconnect-argv.json").exists())
+        self.assertIsNone(self.connect_argv())
+
+    def test_the_same_version_running_is_already_connected(self):
+        result = self.run_against_fake("already_connected",
+                                       FAKE_KEEL_LAUNCHER_VERSION=self._bundle_version())
+        self.assertEqual(result["outcome"], "already_connected")
+        self.assertIsNone(self.connect_argv())
+
+    def test_a_fresh_launch_names_the_launcher(self):
+        result = self.run_against_fake("not_running_then_instant_connect", args=["--wait-seconds", "5"])
+        self.assertEqual(result["outcome"], "connected")
+        self.track_pid(result["pid"])
+        argv = self.connect_argv()
+        self.assertIn("--launcher-version", argv)
+
     def test_authorization_started(self):
         result = self.run_against_fake("not_running_then_auth", args=["--wait-seconds", "5"])
         self.assertEqual(result["outcome"], "authorization_started")
