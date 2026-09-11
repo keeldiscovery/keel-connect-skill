@@ -7,7 +7,7 @@ Keel does not hold this for you to fetch — the runtime's token may read its ow
 founder's screen — so ask the founder directly, in your own words, something like:
 
 > Open this project in keel-web, in the browser where you approved the device. On the overview,
-> use **Download as PDF**. It saves a five-page document: a title page, an overview carrying a
+> use **Download the brief**. It saves a five-page document: a title page, an overview carrying a
 > paragraph called *What this says*, and one page each for the problem, the solution and the
 > price — every measured line, and the people's own words. Paste its text here and I'll bring it
 > into the spec.

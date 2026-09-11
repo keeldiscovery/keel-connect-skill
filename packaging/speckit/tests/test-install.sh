@@ -159,8 +159,10 @@ head_ "a real install"
 if [ "$FULL" = "1" ]; then
   if command -v specify >/dev/null 2>&1; then
     TMP="$(mktemp -d 2>/dev/null || mktemp -d -t keel)"
-    ( cd "$TMP" && specify init . --here --ai claude --force >/dev/null 2>&1 \
-      && specify extension add "$ID" --from "$EXT_DIR" >/dev/null 2>&1 \
+    # Spec Kit 1.x (measured on 1.0.7.dev0, 2026-09-11): `init` takes `--integration`, not
+    # `--ai`, and a local tree installs with `extension add <path> --dev`, not `--from`.
+    ( cd "$TMP" && specify init . --here --force --non-interactive --integration claude --ignore-agent-tools >/dev/null 2>&1 \
+      && specify extension add "$EXT_DIR" --dev >/dev/null 2>&1 \
       && specify extension list 2>/dev/null | grep -q "$ID" )
     [ $? -eq 0 ] && ok "installed into a scratch Spec Kit project and listed" \
                  || no "a real install failed -- run the commands by hand to see why"

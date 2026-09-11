@@ -404,7 +404,7 @@ class SpecKitManifestTestCase(DistTestCase):
         self.assertNotIn("```bash", text)
         self.assertNotIn("http://", text)
         self.assertNotIn("https://", text)
-        self.assertIn("Download as PDF", text)
+        self.assertIn("Download the brief", text)
         for reading in ("evidence", "opinion", "source material"):
             self.assertIn(reading, text)
 
