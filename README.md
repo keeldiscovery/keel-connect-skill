@@ -71,6 +71,25 @@ the local `release` branch to it, and force-pushes `origin/release`. Reproducibl
 object every time, because the commit's author/committer dates are pinned to `master`'s own commit
 date rather than to when `make release` happened to run.
 
+## Tested against
+
+The fourth part of the "supported" gate (keel-cloud `canon/designs/keel-skill-design.md` §5.5:
+*the release notes name the host CLI version range tested against*), kept here because this
+repository has no release notes of its own yet. The versions are the ones the runs recorded —
+keel-e2e-eval's host pre-flight and the instruction eval's scorecard both write the CLI version
+into the bundle — never typed from memory.
+
+| Host | CLI version | Where it was proven | Date |
+|---|---|---|---|
+| Claude Code | 2.1.268 | the matrix (macOS and Windows, short journey per change), the full journey on macOS, the instruction eval's run of record | 2026-09-11 |
+| Copilot CLI | 1.0.83 | the matrix (macOS and Windows, short journey per change), the full journey on macOS (`runs/20260911T040525Z-s012-journey-copilot`), the instruction eval pinned to `gpt-5.6-luna` (`runs/20260910T213217Z-instructions-copilot`: anchoring 95.4 %, recall 81.8 %, refusals 0, brief 7/7) | 2026-09-11 |
+
+The landing page's fitting-out quotes this table in one line (keel-web `landing-copy.json`,
+`fitting.harbours[0].learn[2]`). **Refreshing it is a release step**, beside `make runtime`: run the
+matrix and the instruction eval on the CLI versions the day has, then move the versions and the
+date here and in that one line, in the same commit. A line that is older than the plugin it
+describes is the thing this section exists to prevent.
+
 ## The four packagings
 
 `make dist` builds all of them from the one copy of `SKILL.md`, `scripts/` and `keel_runtime/` in
