@@ -43,6 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
     connect.add_argument("--executor")
     connect.add_argument("--credential-backend")
     connect.add_argument("--no-browser", action="store_true")
+    connect.add_argument("--launcher-version")
 
     # spec `002-keel-disconnect`: the same subcommand keel-runtime grew, with the four outcomes of
     # its own contract driven by the same FAKE_KEEL_SCENARIO variable. The sibling fixture
@@ -104,16 +105,29 @@ def _run_status(scenario: str, home_flag) -> int:
             "base_url": "http://fake-cloud.test",
             "last_heartbeat_at": "2026-01-01T00:00:00.000Z",
             "connected": True,
+            "launcher_version": "999.0.0",
+            "busy": False,
         }))
         return 0
 
-    if scenario == "already_connected":
+    if scenario in ("already_connected", "older_then_instant_connect"):
+        # spec `005-upgrade-in-place`: the real runtime's running shape carries who launched it
+        # and whether it is busy (keel-runtime spec 007); FAKE_KEEL_LAUNCHER_VERSION and
+        # FAKE_KEEL_BUSY shape them here. `older_then_instant_connect` is the upgrade path: the
+        # same running shape, then a `disconnect` that stops, then a `connect` that reconnects on
+        # a saved credential.
         result = {
             "running": True,
             "pid": os.getpid(),
             "agent_session_id": "fixed-agent-session-id",
             "last_heartbeat_at": "2026-01-01T00:00:00.000Z",
             "connected": True,
+            # `already_connected` means "a runtime to leave alone": unless a test names the
+            # launcher, it reads as launched by a version no bundle is newer than. The upgrade
+            # scenario defaults to an unknown launcher, which counts as older (spec 005).
+            "launcher_version": os.environ.get("FAKE_KEEL_LAUNCHER_VERSION")
+            or ("999.0.0" if scenario == "already_connected" else None),
+            "busy": os.environ.get("FAKE_KEEL_BUSY") == "1",
         }
     elif scenario == "awaiting_approval":
         # keel-runtime commit bfc0ad6: the heartbeat exists from the moment `connect` starts, in
@@ -152,7 +166,7 @@ def _run_connect(scenario: str, home_flag, raw_argv) -> int:
         print("Enter code: FAKE-CODE")
         print("KEEL_USER_CODE=FAKE-CODE", flush=True)
         print("KEEL_VERIFICATION_URI=http://fake-cloud.test/verify", flush=True)
-    elif scenario == "not_running_then_instant_connect":
+    elif scenario in ("not_running_then_instant_connect", "older_then_instant_connect"):
         print("KEEL_AGENT_SESSION_ID=instant-agent-session-id", flush=True)
     elif scenario == "not_running_then_no_signal":
         pass  # print nothing -- simulate a hang before any marker line
@@ -173,6 +187,8 @@ def _run_connect(scenario: str, home_flag, raw_argv) -> int:
 # reached without the runtime having crashed.
 DISCONNECT_SHAPES = {
     "stopped": {"outcome": "stopped", "pid": 41213, "waited_ms": 84, "signal": "SIGTERM"},
+    "older_then_instant_connect": {"outcome": "stopped", "pid": 41213, "waited_ms": 84,
+                                   "signal": "SIGTERM"},
     "stopped_sigkill": {"outcome": "stopped", "pid": 41213, "waited_ms": 10004,
                         "signal": "SIGKILL"},
     "stale_pid": {"outcome": "stale_pid_cleared", "pid": 40118},

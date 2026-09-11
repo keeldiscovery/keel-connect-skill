@@ -32,7 +32,7 @@ PYTHON ?= python3
 VERSION := $(shell cat VERSION)
 
 # The three things that are copied into every tree, identically, and nothing else (D1, D2).
-SKILL_FILES := SKILL.md scripts keel_runtime
+SKILL_FILES := SKILL.md scripts keel_runtime VERSION
 
 .PHONY: runtime dist release test clean
 

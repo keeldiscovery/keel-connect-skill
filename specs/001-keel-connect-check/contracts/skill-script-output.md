@@ -78,7 +78,7 @@ not shadow it silently.
 
 ## Output shapes (exhaustive)
 
-`environment` is on **all seven**: *which Keel this is* -- `"cloud"` for the built-in default, or
+`environment` is on **all nine**: *which Keel this is* -- `"cloud"` for the built-in default, or
 `"host:port"` as the runtime resolved it. It is `null` **exactly when no runtime answered** --
 `python_too_old`, `runtime_unavailable`, and an `internal_error` raised before `status` returned.
 The script carries no base URL and no environment table of its own: it relays what the runtime
@@ -205,13 +205,13 @@ failure came later (a `connect` that would not start).
 
 ## Guarantees a caller may rely on
 
-1. **Exactly one line of JSON on stdout, always**, for all seven outcomes, and nothing else on
+1. **Exactly one line of JSON on stdout, always**, for all nine outcomes, and nothing else on
    stdout.
 2. **Exit 0 for every outcome except `internal_error`, which exits 1.** One rule, no exceptions.
-3. `outcome` is one of the seven values above, and **no key outside a shape is added without this
+3. `outcome` is one of the nine values above, and **no key outside a shape is added without this
    file changing first**. Every key listed for a shape is present in every occurrence of it -- no
    key is ever conditionally omitted within a shape.
-4. **`environment` is present on all seven shapes**, and is `null` exactly when no runtime
+4. **`environment` is present on all nine shapes**, and is `null` exactly when no runtime
    answered.
 5. `status` is always checked before anything is launched; a `connect` process is launched if and
    only if `status` reported `running: false` at that moment. This script never launches a second
@@ -225,7 +225,7 @@ failure came later (a `connect` that would not start).
 | | Then | Now |
 |---|---|---|
 | `python_too_old` | — | new, and reachable before anything is resolved |
-| `environment` | — | on all seven shapes |
+| `environment` | — | on all nine shapes |
 | `already_connected.base_url` | present | **gone**, replaced by `environment` |
 | resolution order | `PATH`, then a checkout | a checkout, then **bundled**, then `PATH` |
 | `runtime_unavailable.message` | named `pip install keel-runtime` | names neither an install nor the development override |
@@ -234,3 +234,55 @@ failure came later (a `connect` that would not start).
 
 The three outcome names spec 001 shipped that are unchanged in shape -- `connected`,
 `authorization_started`, `authorization_pending_timeout` -- gained `environment` and nothing else.
+
+## Amendment 2026-09-11 (spec `005-upgrade-in-place`) -- nine outcomes, from seven
+
+A change to this file is a major version of the skill (design §7); this one is **2.0.0**.
+
+**`already_connected`** gains one key, `launcher_version`: the skill version that launched the
+running runtime as it told the runtime (keel-runtime spec 007), `null` when it could not say. It
+is always present in the shape, and it is always the same as this skill's version or newer -- an
+older one would not have produced this outcome (below).
+
+**`upgraded`** -- a runtime launched by an older skill was running and idle; it was stopped through
+the runtime's own `disconnect` and this bundle's `connect` was launched in its place.
+
+```json
+{
+  "outcome": "upgraded",
+  "then": "connected",
+  "previous_version": "1.0.0",
+  "bundle_version": "2.0.0",
+  "agent_session_id": "…",
+  "pid": 41230,
+  "log_file": "/Users/…/.keel/cloud/keel-connect.log",
+  "environment": "cloud"
+}
+```
+
+`then` is `connected`, `authorization_started` or `authorization_pending_timeout`, and every key
+that outcome carries is on this shape too (`user_code` and `verification_uri` for
+`authorization_started`; `message` for the timeout). `previous_version` is `null` when the older
+runtime could not say who launched it.
+
+**`upgrade_waiting`** -- a runtime launched by an older skill is running and working on a job; it
+was left alone. Nothing was stopped or launched.
+
+```json
+{
+  "outcome": "upgrade_waiting",
+  "running_version": "1.0.0",
+  "bundle_version": "2.0.0",
+  "agent_session_id": "…",
+  "environment": "cloud"
+}
+```
+
+**When each happens.** The bundle's version is the `VERSION` file at the skill's root. With the
+runtime running and connected: bundle newer than `launcher_version` (an unknown launcher counts as
+older) and `busy: false` → `upgraded`; bundle newer and `busy: true` → `upgrade_waiting`; otherwise
+`already_connected`. A tree with no `VERSION` file never upgrades anything. A disconnect that does
+not answer `stopped`/`not_running`/`stale_pid_cleared` is `internal_error`, and nothing is launched.
+Guarantee 5 is amended: a `connect` is launched if and only if `status` reported `running: false`
+**or** the older runtime was just stopped by this script; `pid`/`log_file` are never stale either way.
+

@@ -144,6 +144,16 @@ class OneSkillTestCase(DistTestCase):
                 self.assertEqual((root / "SKILL.md").read_bytes(), source,
                                  "D1: %s's SKILL.md is not the one source copy" % name)
 
+    def test_the_version_file_travels_with_every_tree(self):
+        """Spec `005-upgrade-in-place`: the connect check reads the skill's own `VERSION` at the
+        tree's root to know whether it is newer than the runtime already running. So the file is
+        in `SKILL_FILES` and every packaging carries it, byte for byte (D7: one number)."""
+        source = (REPO_ROOT / "VERSION").read_bytes()
+        for name, root in TREES.items():
+            with self.subTest(tree=name):
+                self.assertEqual((root / "VERSION").read_bytes(), source,
+                                 "D7: %s's VERSION is not the one number" % name)
+
     def test_scripts_are_byte_identical_everywhere(self):
         source = self.files_under(SOURCE_SCRIPTS)
         self.assertIn("keel_connect_check.py", source)
