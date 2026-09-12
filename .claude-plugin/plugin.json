@@ -1,0 +1,14 @@
+{
+  "name": "keel",
+  "displayName": "Keel Connect",
+  "version": "2.1.2",
+  "description": "Connect the local Keel runtime to Keel Cloud without leaving your agent, and stop it again when you ask. The runtime travels inside the plugin; Python 3.9 or newer is the one prerequisite.",
+  "author": {
+    "name": "Keel Discovery",
+    "url": "https://github.com/keeldiscovery"
+  },
+  "homepage": "https://github.com/keeldiscovery/keel-connect-skill",
+  "repository": "https://github.com/keeldiscovery/keel-connect-skill",
+  "license": "Apache-2.0",
+  "keywords": ["keel", "runtime", "connect", "agent", "infrastructure"]
+}
