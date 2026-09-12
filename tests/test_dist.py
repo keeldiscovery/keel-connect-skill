@@ -334,6 +334,28 @@ class HostCliValidationTestCase(DistTestCase):
     def test_the_marketplace_validates(self):
         self.validate(DIST / "marketplace")
 
+    def test_codex_reads_the_same_plugin_from_the_same_branch(self):
+        """Codex CLI (measured 2026-09-12, codex-cli 0.154.0) reads `.claude-plugin/marketplace.json`
+        as a marketplace manifest, but its plugin `source` kinds are `local`, `url`, `git-subdir`
+        and `npm` -- Claude Code's `{"source": "github", "repo": ..., "ref": ...}` is skipped
+        without a word, so `codex plugin add keel@keel` found nothing. Codex looks at
+        `.agents/plugins/marketplace.json` first, so the tree carries one there, in Codex's own
+        shape, naming the identical plugin from the identical branch: `codex plugin add keel@keel`
+        then installs `skills/keel-connect/SKILL.md` from `release` (measured)."""
+        codex = json.loads(
+            (DIST / "marketplace" / ".agents" / "plugins" / "marketplace.json").read_text("utf-8"))
+        claude = json.loads(
+            (DIST / "marketplace" / ".claude-plugin" / "marketplace.json").read_text("utf-8"))
+        self.assertEqual(codex["name"], claude["name"])
+        self.assertEqual(len(codex["plugins"]), 1)
+        entry = codex["plugins"][0]
+        self.assertEqual(entry["name"], claude["plugins"][0]["name"])
+        self.assertEqual(entry["source"]["source"], "url",
+                         "the one git-shaped source kind Codex accepts for a whole repository")
+        self.assertEqual(entry["source"]["url"],
+                         "https://github.com/" + claude["plugins"][0]["source"]["repo"] + ".git")
+        self.assertEqual(entry["source"]["ref"], claude["plugins"][0]["source"]["ref"])
+
 
 # ===================================================================== the Spec Kit extension (§8.4)
 

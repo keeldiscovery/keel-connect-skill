@@ -135,6 +135,7 @@ dist:
 	$(call stamp,packaging/marketplace/marketplace.json.in,dist/marketplace/.claude-plugin/marketplace.json); \
 	mkdir -p dist/marketplace/.github/plugin; \
 	cp dist/marketplace/.claude-plugin/marketplace.json dist/marketplace/.github/plugin/marketplace.json; \
+	$(call stamp,packaging/marketplace/marketplace.codex.json.in,dist/marketplace/.agents/plugins/marketplace.json); \
 	cp packaging/marketplace/README.md dist/marketplace/README.md; \
 	cp LICENSE dist/marketplace/LICENSE; \
 	\

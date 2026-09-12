@@ -19,6 +19,18 @@ copilot plugin marketplace add keeldiscovery/keel-marketplace
 copilot plugin install keel@keel
 ```
 
+## Codex
+
+Codex reads a marketplace of its own shape from `.agents/plugins/marketplace.json`, which this
+repository also carries -- the same one plugin, from the same `release` branch. Codex is not a
+measured host yet: the plugin installs and the skill loads (measured 2026-09-12 with codex-cli
+0.154.0), and we say no more than that until it clears the four-part gate.
+
+```bash
+codex plugin marketplace add keeldiscovery/keel-marketplace
+codex plugin add keel@keel
+```
+
 ## Other hosts that read the same manifest
 
 Two more hosts read a Claude-format `marketplace.json` as it is, so this repository serves them

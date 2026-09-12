@@ -127,6 +127,12 @@ listed yet, and nothing new to keep in step.
   Not the bare `keeldiscovery/keel-connect-skill`: that resolves to this branch's root
   `SKILL.md`, beside a `keel_runtime/` that is gitignored here, so the skill would arrive with no
   runtime inside it (measured 2026-09-12 with `--list` against both).
+- **Codex CLI** reads a marketplace from `.agents/plugins/marketplace.json` in its own shape
+  (plugin sources are `local`, `url`, `git-subdir` or `npm`; Claude's `github` kind is skipped
+  silently), so `dist/marketplace/` carries one beside the Claude-format file, naming the same
+  plugin from the same `release` branch. `codex plugin marketplace add keeldiscovery/keel-marketplace`
+  then `codex plugin add keel@keel` installs `skills/keel-connect/SKILL.md` (measured 2026-09-12,
+  codex-cli 0.154.0). Not a measured host: see §5.5's gate.
 - **VS Code's agent plugins** and **JetBrains Junie CLI** both read a Claude-format
   `marketplace.json` unchanged, so `keeldiscovery/keel-marketplace` serves them as it is. VS Code:
   `"chat.plugins.marketplaces": ["keeldiscovery/keel-marketplace"]` in settings, then *Install*
