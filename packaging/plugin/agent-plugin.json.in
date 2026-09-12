@@ -1,4 +1,5 @@
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "keel",
   "version": "${VERSION}",
   "description": "Connect the local Keel runtime to Keel Cloud without leaving your agent, and stop it again when you ask. The runtime travels inside the plugin; Python 3.9 or newer is the one prerequisite.",
@@ -9,6 +10,5 @@
   "homepage": "https://github.com/keeldiscovery/keel-connect-skill",
   "repository": "https://github.com/keeldiscovery/keel-connect-skill",
   "license": "Apache-2.0",
-  "keywords": ["keel", "customer-discovery", "founders", "validation", "runtime", "connect", "agent"],
-  "skills": "./skills/"
+  "keywords": ["keel", "customer-discovery", "founders", "validation", "runtime", "connect", "agent"]
 }

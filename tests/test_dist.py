@@ -260,7 +260,10 @@ class AgentPluginManifestTestCase(DistTestCase):
         self.assertEqual(root["version"], claude["version"])
         self.assertEqual(root["version"], VERSION)
         self.assertEqual(root["license"], claude["license"])
-        self.assertEqual(root["skills"], "./skills/")
+        # awesome-copilot's spec check (2026-09-12, issue #3076): the 1.0.0 schema wants `$schema`
+        # and no additional properties -- skills are found by convention under `skills/`.
+        self.assertEqual(root["$schema"], "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json")
+        self.assertNotIn("skills", root, "not an Agent Plugins 1.0 field; skills/ is the convention")
         self.assertNotIn("displayName", root, "not an Agent Plugins 1.0 field")
 
 
