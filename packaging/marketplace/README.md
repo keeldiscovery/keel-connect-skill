@@ -19,6 +19,25 @@ copilot plugin marketplace add keeldiscovery/keel-marketplace
 copilot plugin install keel@keel
 ```
 
+## Other hosts that read the same manifest
+
+Two more hosts read a Claude-format `marketplace.json` as it is, so this repository serves them
+unchanged. Neither is a measured host: the manifest is read and the skill loads, and we say no
+more than that until each clears the four-part gate the landing page describes.
+
+- **VS Code** (agent plugins): add `"chat.plugins.marketplaces": ["keeldiscovery/keel-marketplace"]`
+  to your settings, then open the Extensions view, search `@agentPlugins`, and install **Keel
+  Connect**.
+- **JetBrains Junie CLI**: `/extensions marketplace add keeldiscovery/keel-marketplace`, then
+  `/extensions install keel`.
+
+And without any marketplace at all, Vercel's `skills` installer takes the plugin's skill straight
+from the `release` branch, into whichever agents you have:
+
+```bash
+npx skills add https://github.com/keeldiscovery/keel-connect-skill/tree/release/skills/keel-connect
+```
+
 Nothing else. It names one plugin whose source is the
 **`release` branch of [`keeldiscovery/keel-connect-skill`](https://github.com/keeldiscovery/keel-connect-skill)** —
 that branch's root is the built plugin tree. One repository stays authoritative and browsable, and

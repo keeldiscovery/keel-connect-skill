@@ -111,6 +111,30 @@ Two more things are written beside them and are **not** shipped in any tree:
 - `dist/speckit-catalog-entry.json` -- generated from the built `extension.yml`, so the Spec Kit
   submission and the manifest cannot disagree.
 
+### The same tree on other shelves
+
+None of these is a fifth packaging. Each reads one of the trees above exactly as it is, which is
+the whole point (keel-marketing `funnels-design.md` §3): one `SKILL.md`, listed where it is not
+listed yet, and nothing new to keep in step.
+
+- **skills.sh** -- Vercel's `npx skills add`, which installs into seventy-odd agents and counts
+  the install. The line is the plugin tree's skill on the `release` branch:
+
+  ```sh
+  npx skills add https://github.com/keeldiscovery/keel-connect-skill/tree/release/skills/keel-connect
+  ```
+
+  Not the bare `keeldiscovery/keel-connect-skill`: that resolves to this branch's root
+  `SKILL.md`, beside a `keel_runtime/` that is gitignored here, so the skill would arrive with no
+  runtime inside it (measured 2026-09-12 with `--list` against both).
+- **VS Code's agent plugins** and **JetBrains Junie CLI** both read a Claude-format
+  `marketplace.json` unchanged, so `keeldiscovery/keel-marketplace` serves them as it is. VS Code:
+  `"chat.plugins.marketplaces": ["keeldiscovery/keel-marketplace"]` in settings, then *Install*
+  from the Extensions view under `@agentPlugins`. Junie: `/extensions marketplace add
+  keeldiscovery/keel-marketplace`, then `/extensions install keel`. **Neither is a measured host**
+  (keel-cloud `canon/designs/keel-skill-design.md` §5.5): the manifest is read and the skill loads,
+  and nothing here claims more than that.
+
 ### What is the founder's to do by hand
 
 `make dist` writes directories. Everything with a consequence outside this machine stays a person's

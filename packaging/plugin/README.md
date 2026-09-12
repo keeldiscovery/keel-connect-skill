@@ -35,4 +35,9 @@ install — and a test asserts it.
 
 Source, issues and the specs: https://github.com/keeldiscovery/keel-connect-skill
 
+Privacy policy: https://keeldiscovery.com/privacy · Terms: https://keeldiscovery.com/terms. The
+plugin adds no hooks, no MCP servers and no settings. The runtime it carries keeps its device
+credential in a file under `~/.keel/` on this machine and speaks only to the Keel Cloud it names,
+after you have approved the device in your browser.
+
 Licensed under Apache-2.0.
