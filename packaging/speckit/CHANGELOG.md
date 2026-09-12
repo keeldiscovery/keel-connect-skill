@@ -3,6 +3,12 @@
 All notable changes to this extension are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [2.1.1]
+
+The runtime inside is keel-runtime 0.3.1: a Codex session that keeps its login in an isolated
+home can name it as `KEEL_CODEX_HOME`, because Codex strips `CODEX_HOME` from the shells it runs
+commands in. Nothing else changed.
+
 ## [2.1.0]
 
 Codex is a host the skill recognises. The check script's host table names `codex` when a command
