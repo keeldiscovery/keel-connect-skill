@@ -82,7 +82,8 @@ into the bundle — never typed from memory.
 | Host | CLI version | Where it was proven | Date |
 |---|---|---|---|
 | Claude Code | 2.1.268 | the matrix (macOS and Windows, short journey per change), the full journey on macOS, the instruction eval's run of record | 2026-09-11 |
-| Copilot CLI | 1.0.83 | the matrix (macOS and Windows, short journey per change), the full journey on macOS (`runs/20260911T040525Z-s012-journey-copilot`), the instruction eval pinned to `gpt-5.6-luna` (`runs/20260910T213217Z-instructions-copilot`: anchoring 95.4 %, recall 81.8 %, refusals 0, brief 7/7) | 2026-09-11 |
+| Copilot CLI | 1.0.83 | the matrix (macOS and Windows, the full journey, 2026-09-12), the instruction eval pinned to `gpt-5.6-luna` (`runs/20260912T191613Z-instructions-copilot`, 393 cases × 3: anchoring 95.1 %, recall 85.6 %, **refusals 1, brief 13/21** -- two of the four marks missed, keel-e2e-eval DRIFT #67; runs, unmeasured) | 2026-09-12 |
+| Codex CLI | 0.154.0 | the matrix (macOS and Windows, the full journey, run 34713021574, 2026-09-12); the instruction eval is running (spec 008; runs, unmeasured) | 2026-09-12 |
 
 The landing page's fitting-out quotes this table in one line (keel-web `landing-copy.json`,
 `fitting.harbours[0].learn[2]`). **Refreshing it is a release step**, beside `make runtime`: run the
