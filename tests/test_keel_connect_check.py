@@ -34,7 +34,8 @@ BUNDLED_RUNTIME = REPO_ROOT / "keel_runtime"
 # Everything a session in this repository (or in keel-connect-playground) might have set that
 # would otherwise leak into a test's answer. Scrubbed from every subprocess environment, always.
 AMBIENT = ("KEEL_HOME", "KEEL_BASE_URL", "KEEL_RUNTIME_PATH", "KEEL_EXECUTOR", "PYTHONPATH",
-           "CLAUDECODE", "COPILOT_CLI", "COPILOT_AGENT_SESSION_ID", "AI_AGENT")
+           "CLAUDECODE", "COPILOT_CLI", "COPILOT_AGENT_SESSION_ID", "AI_AGENT",
+           "CODEX_THREAD_ID", "CODEX_SESSION_ID")
 
 # `SIGKILL` does not exist on Windows -- `os.kill(pid, signal.SIGTERM)` there calls
 # `TerminateProcess()` unconditionally (there is no catchable-signal distinction to lose), so it is
@@ -641,6 +642,8 @@ class HostDetectionTestCase(SkillHarness):
             ({"COPILOT_CLI": "1"}, "copilot"),
             ({"COPILOT_AGENT_SESSION_ID": "abc-123"}, "copilot"),
             ({"AI_AGENT": "github_copilot_cli"}, "copilot"),
+            ({"CODEX_THREAD_ID": "01a09670-929a-7fb1-867d-8fb479ada847"}, "codex"),
+            ({"CODEX_SESSION_ID": "01a09670-929a-7fb1-867d-8fb479ada847"}, "codex"),
             # Silent.
             ({}, None),
             ({"CLAUDECODE": "0"}, None),
@@ -650,6 +653,9 @@ class HostDetectionTestCase(SkillHarness):
             # the environment that taught this table those variable names.
             ({"CLAUDECODE": "1", "COPILOT_AGENT_SESSION_ID": "abc-123"}, None),
             ({"AI_AGENT": "claude-code/1.2.3", "COPILOT_CLI": "1"}, None),
+            # ...and Codex running inside Claude Code, which is the environment that measured
+            # Codex's own markers (an inherited AI_AGENT=claude-code_... beside CODEX_THREAD_ID).
+            ({"CLAUDECODE": "1", "AI_AGENT": "claude-code_2-1-269_agent", "CODEX_THREAD_ID": "x"}, None),
             # Two markers agreeing is still one answer.
             ({"COPILOT_CLI": "1", "COPILOT_AGENT_SESSION_ID": "abc-123"}, "copilot"),
         ]
@@ -668,6 +674,8 @@ class HostDetectionTestCase(SkillHarness):
         self.assertEqual(
             keel_connect_check.executor_for(parse(["--host", "claude"]), {}), "claude-code",
             "C-12: `claude-code` is a permanent accepted alias, and the name today's runtime knows")
+        self.assertEqual(
+            keel_connect_check.executor_for(parse(["--host", "codex"]), {}), "codex")
 
     def test_a_silent_or_contradictory_environment_says_nothing(self):
         parse = keel_connect_check.build_parser().parse_args

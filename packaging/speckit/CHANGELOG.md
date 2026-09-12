@@ -3,6 +3,15 @@
 All notable changes to this extension are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [2.1.0]
+
+Codex is a host the skill recognises. The check script's host table names `codex` when a command
+runs inside a Codex session (`CODEX_THREAD_ID` / `CODEX_SESSION_ID`), and the runtime inside is
+keel-runtime 0.3.0, which carries a Codex executor: `codex exec` in a closed shape (thirteen
+feature flags off, read-only sandbox, no session file), the schema in the prompt, tokens as the
+unit. Codex is not a measured host yet -- it installs, loads and runs; say so, and do not bet a
+project on it until the gate is green. Nothing changes for Claude Code or Copilot.
+
 ## [2.0.1]
 
 Keel's address is `https://keeldiscovery.com`. The runtime inside is keel-runtime 0.2.1, whose

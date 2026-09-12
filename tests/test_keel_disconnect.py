@@ -38,7 +38,8 @@ FAKE_NO_DISCONNECT = FIXTURES / "fake_runtime_no_disconnect"
 BUNDLED_RUNTIME = REPO_ROOT / "keel_runtime"
 
 AMBIENT = ("KEEL_HOME", "KEEL_BASE_URL", "KEEL_RUNTIME_PATH", "KEEL_EXECUTOR", "PYTHONPATH",
-           "CLAUDECODE", "COPILOT_CLI", "COPILOT_AGENT_SESSION_ID", "AI_AGENT")
+           "CLAUDECODE", "COPILOT_CLI", "COPILOT_AGENT_SESSION_ID", "AI_AGENT",
+           "CODEX_THREAD_ID", "CODEX_SESSION_ID")
 
 # `SIGKILL` does not exist on Windows -- `os.kill(pid, signal.SIGTERM)` there calls
 # `TerminateProcess()` unconditionally, so it is just as final a cleanup as SIGKILL is on POSIX.
