@@ -243,6 +243,27 @@ class OneVersionTestCase(DistTestCase):
 # ================================================================= the Claude Code plugin (§8.2)
 
 
+class AgentPluginManifestTestCase(DistTestCase):
+    """The plugin tree also carries `plugin.json` at its root, in the Agent Plugins 1.0 shape
+    (agentplugins.org; keel-marketing funnels-design.md §4.1). Measured 2026-09-12: GitHub's
+    awesome-copilot intake -- the default marketplace in Copilot CLI, VS Code and the Copilot
+    app -- looks for a manifest at `plugin.json`, `.plugin/plugin.json` or
+    `.github/plugin/plugin.json` and failed the version-match gate without one (issue #3076);
+    Codex reads the same root manifest. Claude Code keeps reading `.claude-plugin/plugin.json`
+    and ignores the root one; `claude plugin validate --strict` stays green."""
+
+    def test_it_names_the_same_plugin_at_the_same_version(self):
+        root = json.loads((DIST / "plugin" / "plugin.json").read_text(encoding="utf-8"))
+        claude = json.loads(
+            (DIST / "plugin" / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(root["name"], claude["name"])
+        self.assertEqual(root["version"], claude["version"])
+        self.assertEqual(root["version"], VERSION)
+        self.assertEqual(root["license"], claude["license"])
+        self.assertEqual(root["skills"], "./skills/")
+        self.assertNotIn("displayName", root, "not an Agent Plugins 1.0 field")
+
+
 class PluginManifestTestCase(DistTestCase):
     def manifest(self):
         return json.loads(

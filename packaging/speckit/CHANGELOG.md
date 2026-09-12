@@ -3,6 +3,12 @@
 All notable changes to this extension are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [2.1.2]
+
+The plugin tree carries `plugin.json` at its root, in the Agent Plugins 1.0 shape, beside the
+`.claude-plugin/` manifest it already had -- what GitHub's Copilot marketplace and Codex read.
+Nothing inside the skill changed.
+
 ## [2.1.1]
 
 The runtime inside is keel-runtime 0.3.1: a Codex session that keeps its login in an isolated

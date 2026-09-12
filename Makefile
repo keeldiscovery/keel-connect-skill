@@ -102,6 +102,7 @@ dist:
 	\
 	echo "dist/plugin        Claude Code plugin"; \
 	$(call stamp,packaging/plugin/plugin.json.in,dist/plugin/.claude-plugin/plugin.json); \
+	$(call stamp,packaging/plugin/agent-plugin.json.in,dist/plugin/plugin.json); \
 	$(call place_skill,dist/plugin/skills/keel-connect); \
 	cp packaging/plugin/README.md dist/plugin/README.md; \
 	cp LICENSE dist/plugin/LICENSE; \
