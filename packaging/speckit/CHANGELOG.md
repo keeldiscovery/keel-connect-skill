@@ -3,6 +3,13 @@
 All notable changes to this extension are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [2.3.1]
+
+The runtime inside is keel-runtime 0.5.1: the two rule sentences (use the listed word exactly;
+never the word "proxy") now sit under CONTRACT in the Claude-shaped prompt as well, after Claude's
+own run of record missed one brief on that word. The skill itself is unchanged. Codex is
+**supported** (README, *Tested against*).
+
 ## [2.3.0]
 
 The runtime inside is keel-runtime 0.5.0. The model a job runs on is now named by the cloud, per
