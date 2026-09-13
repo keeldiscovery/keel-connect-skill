@@ -3,6 +3,17 @@
 All notable changes to this extension are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [2.3.0]
+
+The runtime inside is keel-runtime 0.5.0. The model a job runs on is now named by the cloud, per
+job, from one table kept there (keel-cloud spec 042, `canon/designs/model-routing-design.md`): the
+runtime reads the job's `model` entry for its own host and passes it to the CLI, retries once
+unpinned when the CLI refuses that model by name, and reports which model answered. The 2.2.0
+model knobs (`KEEL_CLAUDE_MODEL`, `KEEL_COPILOT_MODEL`, `KEEL_CODEX_MODEL` and their flags) are
+gone -- nothing in the product ever let a person set them. The Copilot- and Codex-shaped prompt
+names the allowed units and forbids the word "proxy" where those hosts read it best. The skill
+itself is unchanged.
+
 ## [2.2.0]
 
 The runtime inside is keel-runtime 0.4.0. Every executor can be pinned to a model now -- Claude
