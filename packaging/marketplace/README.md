@@ -22,9 +22,10 @@ copilot plugin install keel@keel
 ## Codex
 
 Codex reads a marketplace of its own shape from `.agents/plugins/marketplace.json`, which this
-repository also carries -- the same one plugin, from the same `release` branch. Codex is not a
-measured host yet: the plugin installs and the skill loads (measured 2026-09-12 with codex-cli
-0.154.0), and we say no more than that until it clears the four-part gate.
+repository also carries -- the same one plugin, from the same `release` branch. Codex is a
+**supported** host since 2026-09-13 (codex-cli 0.154.0, macOS and Windows: the end-to-end journey
+green on both, the instruction eval on `gpt-6-astra` / `gpt-5.4-mini` -- keel-connect-skill's
+README, *Tested against*).
 
 ```bash
 codex plugin marketplace add keeldiscovery/keel-marketplace
