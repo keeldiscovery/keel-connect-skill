@@ -3,6 +3,13 @@
 All notable changes to this extension are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [2.2.0]
+
+The runtime inside is keel-runtime 0.4.0. Every executor can be pinned to a model now -- Claude
+Code joins Copilot and Codex (`KEEL_CLAUDE_MODEL`, an alias such as `sonnet`) -- and Copilot's
+answer is read whether or not the model marks it with a phase, which is what let Anthropic-vendored
+models on Copilot fail every job. The skill itself is unchanged.
+
 ## [2.1.2]
 
 The plugin tree carries `plugin.json` at its root, in the Agent Plugins 1.0 shape, beside the
