@@ -114,7 +114,7 @@ dist:
 	mkdir -p dist/speckit/tests; \
 	cp packaging/speckit/tests/test-install.sh dist/speckit/tests/test-install.sh; \
 	chmod +x dist/speckit/tests/test-install.sh; \
-	cp packaging/speckit/README.md dist/speckit/README.md; \
+	$(call stamp,packaging/speckit/README.md.in,dist/speckit/README.md); \
 	cp packaging/speckit/CHANGELOG.md dist/speckit/CHANGELOG.md; \
 	cp LICENSE dist/speckit/LICENSE; \
 	$(PYTHON) packaging/catalog_entry.py dist/speckit/extension.yml \
