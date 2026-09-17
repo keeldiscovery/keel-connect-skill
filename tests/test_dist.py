@@ -477,6 +477,20 @@ class SpecKitManifestTestCase(DistTestCase):
             parsed = subprocess.run([bash, "-n", str(script)], capture_output=True, text=True)
             self.assertEqual(parsed.returncode, 0, parsed.stderr)
 
+    def test_the_readme_installs_the_version_it_ships_in(self):
+        """The catalogue's `documentation` link lands on this README. Spec Kit's review of the
+        2.0.1 submission (github/spec-kit#4594) found it still pinning `v1.0.0.zip` -- a tag that
+        never existed. It is stamped like the manifest now, and names no other release."""
+        text = (DIST / "speckit" / "README.md").read_text(encoding="utf-8")
+        self.assertNotIn("${VERSION}", text)
+        pinned = re.findall(r"spec-kit-keel/archive/refs/tags/v([^/\s]+)\.zip", text)
+        self.assertEqual(pinned, [VERSION])
+        self.assertIn(self.entry_download_url(), text)
+
+    def entry_download_url(self):
+        entry = json.loads((DIST / "speckit-catalog-entry.json").read_text(encoding="utf-8"))
+        return entry["download_url"]
+
 
 class CatalogueEntryTestCase(DistTestCase):
     """The entry the founder pastes into the submission issue, generated from the built manifest so
