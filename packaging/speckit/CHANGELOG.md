@@ -3,6 +3,16 @@
 All notable changes to this extension are documented here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [2.4.0]
+
+The runtime inside is keel-runtime 0.7.0. The job names the effort now, beside the model, from the
+same one table kept in the cloud (keel-runtime specs 010 and 011): the runtime reads the job's
+`effort` entry for its own host and passes it to the CLI -- `claude --effort <level>`,
+`codex -c model_reasoning_effort=<level>`, `copilot --effort <level>` -- and an argv for a job that
+names none is byte-identical to 0.5.1's. The effort survives the unpinned model retry; a word off
+Codex's or Copilot's own ladder fails that one job before anything is spawned, and nothing is
+substituted. No knob, anywhere. The skill itself is unchanged.
+
 ## [2.3.1]
 
 The runtime inside is keel-runtime 0.5.1: the two rule sentences (use the listed word exactly;
